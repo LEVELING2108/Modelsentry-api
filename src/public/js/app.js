@@ -619,5 +619,56 @@ function showToast(message, type = 'info') {
   }, 4000);
 }
 
+// ── Event Listeners Setup ───────────────────────────────────────────────────
+function setupEventListeners() {
+  // Auth tab buttons
+  document.getElementById('tab-login-btn')?.addEventListener('click', () => switchAuthTab('login'));
+  document.getElementById('tab-register-btn')?.addEventListener('click', () => switchAuthTab('register'));
+
+  // Forms submit
+  document.getElementById('login-form')?.addEventListener('submit', handleLogin);
+  document.getElementById('register-form')?.addEventListener('submit', handleRegister);
+
+  // Sidebar navigation links
+  document.getElementById('nav-playground')?.addEventListener('click', () => showTab('playground'));
+  document.getElementById('nav-keys')?.addEventListener('click', () => showTab('keys'));
+  document.getElementById('nav-history')?.addEventListener('click', () => showTab('history'));
+  document.getElementById('nav-admin')?.addEventListener('click', () => showTab('admin'));
+
+  // User logout button
+  document.querySelector('.logout-btn')?.addEventListener('click', handleLogout);
+
+  // Playground form submission
+  const playgroundForm = document.querySelector('#tab-playground form');
+  playgroundForm?.addEventListener('submit', handleInference);
+
+  // Copy buttons
+  document.querySelector('.copy-json-btn')?.addEventListener('click', copyRawResult);
+  document.querySelector('.copy-raw-btn')?.addEventListener('click', copyNewKey);
+  
+  // API key gen button in keys tab
+  const genKeyBtn = document.querySelector('#tab-keys .view-header button');
+  genKeyBtn?.addEventListener('click', handleGenerateKey);
+
+  // History filters
+  document.getElementById('history-filter-model')?.addEventListener('change', () => loadHistory(1));
+  document.getElementById('history-filter-status')?.addEventListener('change', () => loadHistory(1));
+
+  // Pagination buttons
+  document.getElementById('pagination-prev')?.addEventListener('click', () => changeHistoryPage(-1));
+  document.getElementById('pagination-next')?.addEventListener('click', () => changeHistoryPage(1));
+
+  // Admin slider
+  const slider = document.getElementById('traffic-slider');
+  if (slider) {
+    slider.addEventListener('input', (e) => updateSliderLabels(e.target.value));
+    slider.addEventListener('change', (e) => saveTrafficWeights(e.target.value));
+  }
+}
+
 // Start application
-window.onload = initApp;
+window.onload = () => {
+  setupEventListeners();
+  initApp();
+};
+
