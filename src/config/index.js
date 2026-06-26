@@ -27,6 +27,9 @@ const config = {
     v1Weight: parseFloat(process.env.MODEL_V1_WEIGHT) || 0.8,
     v2Weight: parseFloat(process.env.MODEL_V2_WEIGHT) || 0.2,
     timeoutMs: parseInt(process.env.MODEL_TIMEOUT_MS, 10) || 5000,
+    hfApiKey: process.env.HF_API_KEY || '',
+    v1ModelId: process.env.MODEL_V1_ID || 'distilbert-base-uncased-finetuned-sst-2-english',
+    v2ModelId: process.env.MODEL_V2_ID || 'cardiffnlp/twitter-roberta-base-sentiment-latest',
   },
 
   logging: {

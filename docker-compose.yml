@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: modelsentry-app
+    ports:
+      - '3000:3000'
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - MONGODB_URI=mongodb://db:27017/ml_serving_db
+      - JWT_SECRET=development_secret_keys_modelsentry_auth_32_chars_long
+      - JWT_EXPIRES_IN=7d
+      - RATE_LIMIT_WINDOW_MS=900000
+      - RATE_LIMIT_MAX_REQUESTS=1000 # High limits for local development/dashboard play
+      - LOG_LEVEL=debug
+      # Optional: Add your Hugging Face API key here to enable real AI sentiment predictions
+      - HF_API_KEY=
+    depends_on:
+      - db
+    restart: always
+
+  db:
+    image: mongo:6.0
+    container_name: modelsentry-db
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongo_data:/data/db
+    restart: always
+
+volumes:
+  mongo_data:
+    driver: local

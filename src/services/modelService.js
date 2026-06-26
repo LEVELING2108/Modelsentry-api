@@ -49,6 +49,57 @@ const selectModelVersion = () => {
 };
 
 /**
+ * Helper to normalize labels returned by Hugging Face to uppercase POSITIVE, NEGATIVE, or NEUTRAL
+ */
+const normalizeLabel = (label, modelId) => {
+  const l = String(label).toLowerCase();
+  if (l === 'positive' || l === 'pos') return 'POSITIVE';
+  if (l === 'negative' || l === 'neg') return 'NEGATIVE';
+  if (l === 'neutral' || l === 'neu') return 'NEUTRAL';
+
+  // Fallbacks for pipeline index labels
+  if (l === 'label_0') return 'NEGATIVE';
+  if (l === 'label_1') {
+    return modelId.includes('sst-2') ? 'POSITIVE' : 'NEUTRAL';
+  }
+  if (l === 'label_2') return 'POSITIVE';
+
+  return null;
+};
+
+/**
+ * Direct call to Hugging Face Inference API using native fetch
+ */
+const queryHuggingFace = async (text, modelId) => {
+  const url = `https://api-inference.huggingface.co/models/${modelId}`;
+  const headers = {
+    'Content-Type': 'application/json',
+  };
+  if (config.model.hfApiKey) {
+    headers['Authorization'] = `Bearer ${config.model.hfApiKey}`;
+  }
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ inputs: text }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Hugging Face API error: ${response.status} - ${errText}`);
+  }
+
+  const data = await response.json();
+  if (Array.isArray(data) && Array.isArray(data[0])) {
+    return data[0];
+  } else if (Array.isArray(data)) {
+    return data;
+  }
+  throw new Error('Unexpected response format from Hugging Face');
+};
+
+/**
  * Core inference function with timeout, metrics, and structured logging.
  */
 const runInference = async (text, requestedVersion, options = {}) => {
@@ -63,21 +114,40 @@ const runInference = async (text, requestedVersion, options = {}) => {
   const startMs = Date.now();
 
   try {
-    // Simulate async inference latency (v2 is slightly faster — "improved" model)
-    const latencyBase = modelVersion === 'v2' ? 40 : 80;
-    const latencyMs = latencyBase + Math.random() * 60;
-    await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('Model inference timeout'));
-      }, config.model.timeoutMs);
+    let scores;
+    let usedRealModel = false;
 
-      setTimeout(() => {
-        clearTimeout(timeout);
-        resolve();
-      }, latencyMs);
-    });
+    if (config.model.hfApiKey) {
+      try {
+        const modelId = modelVersion === 'v1' ? config.model.v1ModelId : config.model.v2ModelId;
+        const rawResults = await queryHuggingFace(text, modelId);
 
-    const scores = simulateSoftmax(text, modelVersion);
+        scores = { POSITIVE: 0, NEGATIVE: 0, NEUTRAL: 0 };
+        rawResults.forEach((item) => {
+          const normLabel = normalizeLabel(item.label, modelId);
+          if (normLabel) {
+            scores[normLabel] = item.score;
+          }
+        });
+        usedRealModel = true;
+      } catch (error) {
+        logger.warn('Hugging Face inference failed, falling back to simulation', {
+          error: error.message,
+          modelVersion,
+        });
+        scores = simulateSoftmax(text, modelVersion);
+      }
+    } else {
+      scores = simulateSoftmax(text, modelVersion);
+    }
+
+    // Simulate basic network/inference latency delay if it wasn't real network request
+    if (!usedRealModel) {
+      const latencyBase = modelVersion === 'v2' ? 40 : 80;
+      const latencyMs = latencyBase + Math.random() * 60;
+      await new Promise((resolve) => setTimeout(resolve, latencyMs));
+    }
+
     const topLabel = Object.entries(scores).sort((a, b) => b[1] - a[1])[0];
     const label = topLabel[0];
     const confidence = topLabel[1];
@@ -92,11 +162,11 @@ const runInference = async (text, requestedVersion, options = {}) => {
       { version: modelVersion },
       {
         $inc: { totalPredictions: 1 },
-        $set: { avgLatencyMs: actualLatency }, // Simplified; use EMA in production
+        $set: { avgLatencyMs: actualLatency },
       }
     ).catch(() => {});
 
-    logger.debug('Inference complete', { modelVersion, label, confidence, latencyMs: actualLatency });
+    logger.debug('Inference complete', { modelVersion, label, confidence, latencyMs: actualLatency, realModel: usedRealModel });
 
     return {
       label,

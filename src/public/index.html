@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ModelSentry - ML serving Gateway</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Custom Stylesheet -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="dark-theme">
+  <!-- Ambient Mesh Background Shapes -->
+  <div class="mesh-gradient bg-shape-1"></div>
+  <div class="mesh-gradient bg-shape-2"></div>
+  <div class="mesh-gradient bg-shape-3"></div>
+
+  <!-- Auth Wrapper Overlay (Login / Register Switch) -->
+  <div id="auth-overlay" class="overlay hidden">
+    <div class="auth-card glassmorphism">
+      <div class="auth-logo">
+        <i class="fa-solid fa-shield-halved logo-icon text-gradient"></i>
+        <h2 class="text-gradient">ModelSentry</h2>
+      </div>
+      <p class="auth-subtitle">ML serving Gateway & Observability Wrapper</p>
+
+      <div class="auth-tabs">
+        <button id="tab-login-btn" class="auth-tab active" onclick="switchAuthTab('login')">Sign In</button>
+        <button id="tab-register-btn" class="auth-tab" onclick="switchAuthTab('register')">Sign Up</button>
+      </div>
+
+      <!-- Login Form -->
+      <form id="login-form" class="auth-form" onsubmit="handleLogin(event)">
+        <div class="input-group">
+          <label for="login-email">Email Address</label>
+          <div class="input-wrapper">
+            <i class="fa-regular fa-envelope"></i>
+            <input type="email" id="login-email" required placeholder="name@company.com">
+          </div>
+        </div>
+        <div class="input-group">
+          <label for="login-password">Password</label>
+          <div class="input-wrapper">
+            <i class="fa-solid fa-lock"></i>
+            <input type="password" id="login-password" required placeholder="••••••••">
+          </div>
+        </div>
+        <button type="submit" class="btn primary-btn btn-full">
+          <span>Sign In</span> <i class="fa-solid fa-arrow-right-to-bracket"></i>
+        </button>
+      </form>
+
+      <!-- Register Form -->
+      <form id="register-form" class="auth-form hidden" onsubmit="handleRegister(event)">
+        <div class="input-group">
+          <label for="reg-name">Full Name</label>
+          <div class="input-wrapper">
+            <i class="fa-regular fa-user"></i>
+            <input type="text" id="reg-name" required placeholder="Sourav Kumar">
+          </div>
+        </div>
+        <div class="input-group">
+          <label for="reg-email">Email Address</label>
+          <div class="input-wrapper">
+            <i class="fa-regular fa-envelope"></i>
+            <input type="email" id="reg-email" required placeholder="name@company.com">
+          </div>
+        </div>
+        <div class="input-group">
+          <label for="reg-password">Password</label>
+          <div class="input-wrapper">
+            <i class="fa-solid fa-lock"></i>
+            <input type="password" id="reg-password" required placeholder="Min. 8 chars, 1 uppercase, 1 number">
+          </div>
+        </div>
+        <div class="admin-checkbox-wrapper">
+          <input type="checkbox" id="reg-admin">
+          <label for="reg-admin">Register as Admin User</label>
+        </div>
+        <button type="submit" class="btn primary-btn btn-full">
+          <span>Create Account</span> <i class="fa-solid fa-user-plus"></i>
+        </button>
+      </form>
+
+      <div id="auth-alert" class="alert error-alert hidden">
+        <i class="fa-solid fa-circle-exclamation"></i>
+        <span id="auth-alert-msg">Error details here</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- App Main Layout Container -->
+  <div id="app-container" class="dashboard-layout hidden">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar glassmorphism">
+      <div class="sidebar-brand">
+        <i class="fa-solid fa-shield-halved logo-icon text-gradient"></i>
+        <span class="brand-text text-gradient font-outfit">ModelSentry</span>
+      </div>
+
+      <nav class="sidebar-nav">
+        <ul>
+          <li>
+            <button id="nav-playground" class="nav-link active" onclick="showTab('playground')">
+              <i class="fa-solid fa-terminal"></i> <span>Playground</span>
+            </button>
+          </li>
+          <li>
+            <button id="nav-keys" class="nav-link" onclick="showTab('keys')">
+              <i class="fa-solid fa-key"></i> <span>API Keys</span>
+            </button>
+          </li>
+          <li>
+            <button id="nav-history" class="nav-link" onclick="showTab('history')">
+              <i class="fa-solid fa-clock-rotate-left"></i> <span>History Log</span>
+            </button>
+          </li>
+          <li>
+            <button id="nav-admin" class="nav-link hidden" onclick="showTab('admin')">
+              <i class="fa-solid fa-sliders"></i> <span>Admin Panel</span>
+            </button>
+          </li>
+        </ul>
+      </nav>
+
+      <div class="sidebar-user">
+        <div class="user-avatar" id="avatar-letters">US</div>
+        <div class="user-info">
+          <p id="user-display-name" class="user-name">User Name</p>
+          <span id="user-display-role" class="user-role badge-user">role</span>
+        </div>
+        <button onclick="handleLogout()" class="logout-btn" title="Logout">
+          <i class="fa-solid fa-power-off"></i>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Content Panel -->
+    <main class="main-content">
+      <!-- 1. PLAYGROUND VIEW -->
+      <section id="tab-playground" class="tab-view active">
+        <div class="view-header">
+          <div>
+            <h1 class="view-title">Inference Playground</h1>
+            <p class="view-subtitle">Test and experiment with sentiment analysis model versions in real time</p>
+          </div>
+        </div>
+
+        <div class="playground-grid">
+          <!-- Text Input Form -->
+          <div class="playground-card glassmorphism">
+            <h2 class="card-title"><i class="fa-solid fa-keyboard text-violet"></i> Inference Input</h2>
+            <form onsubmit="handleInference(event)">
+              <div class="input-group">
+                <label for="inference-text">Text Payload</label>
+                <textarea id="inference-text" placeholder="Type or paste text content here to analyze its sentiment..." required maxlength="5000"></textarea>
+                <div class="textarea-footer">
+                  <span id="char-counter">0 / 5000 chars</span>
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="input-group">
+                  <label for="inference-version">Model Routing</label>
+                  <select id="inference-version">
+                    <option value="auto">Auto (A/B traffic split)</option>
+                    <option value="v1">Model v1 (Stable DistilBERT)</option>
+                    <option value="v2">Model v2 (Canary RoBERTa)</option>
+                  </select>
+                </div>
+                <div class="checkbox-group">
+                  <input type="checkbox" id="inference-scores" checked>
+                  <label for="inference-scores">Return confidence scores</label>
+                </div>
+              </div>
+
+              <button type="submit" id="inference-submit-btn" class="btn primary-btn">
+                <span id="inference-btn-text">Execute Inference</span>
+                <i class="fa-solid fa-circle-notch fa-spin spinner hidden" id="inference-spinner"></i>
+              </button>
+            </form>
+          </div>
+
+          <!-- Predictions Results Output -->
+          <div class="playground-card glassmorphism prediction-result-card">
+            <h2 class="card-title"><i class="fa-solid fa-square-poll-vertical text-cyan"></i> Inference Result</h2>
+            <div id="playground-result-empty" class="result-placeholder">
+              <i class="fa-solid fa-chart-line placeholder-icon"></i>
+              <p>Execute an inference on the left to see sentiment results, prediction scores, and latency metrics.</p>
+            </div>
+            
+            <div id="playground-result-display" class="result-display hidden">
+              <!-- Prediction Status Summary -->
+              <div class="result-summary-row">
+                <div class="sentiment-box" id="result-sentiment-box">
+                  <span id="result-sentiment-label">POSITIVE</span>
+                  <span class="sentiment-subtext">Label</span>
+                </div>
+                <div class="meta-box">
+                  <span class="meta-value" id="result-confidence">99.8%</span>
+                  <span class="meta-label">Confidence</span>
+                </div>
+                <div class="meta-box">
+                  <span class="meta-value" id="result-latency">48 ms</span>
+                  <span class="meta-label">Latency</span>
+                </div>
+                <div class="meta-box">
+                  <span class="meta-value badge" id="result-model-version">v1</span>
+                  <span class="meta-label">Model Served</span>
+                </div>
+              </div>
+
+              <!-- Confidence Probability Bars -->
+              <div class="scores-bars-section">
+                <h3 class="section-title">Classification Scores</h3>
+                <div class="score-bar-group">
+                  <div class="bar-label-row">
+                    <span>Positive Sentiment</span>
+                    <span id="bar-pos-val">0.00%</span>
+                  </div>
+                  <div class="progress-track">
+                    <div class="progress-bar pos-bar" id="bar-pos-fill" style="width: 0%"></div>
+                  </div>
+                </div>
+                <div class="score-bar-group">
+                  <div class="bar-label-row">
+                    <span>Negative Sentiment</span>
+                    <span id="bar-neg-val">0.00%</span>
+                  </div>
+                  <div class="progress-track">
+                    <div class="progress-bar neg-bar" id="bar-neg-fill" style="width: 0%"></div>
+                  </div>
+                </div>
+                <div class="score-bar-group">
+                  <div class="bar-label-row">
+                    <span>Neutral Sentiment</span>
+                    <span id="bar-neut-val">0.00%</span>
+                  </div>
+                  <div class="progress-track">
+                    <div class="progress-bar neut-bar" id="bar-neut-fill" style="width: 0%"></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Raw API JSON Output -->
+              <div class="raw-response-section">
+                <div class="raw-header">
+                  <span class="section-title">Response Payload</span>
+                  <button class="copy-json-btn" onclick="copyRawResult()"><i class="fa-regular fa-copy"></i> Copy</button>
+                </div>
+                <pre class="json-code" id="result-json-block">{}</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. API KEYS VIEW -->
+      <section id="tab-keys" class="tab-view">
+        <div class="view-header">
+          <div>
+            <h1 class="view-title">Developer API Keys</h1>
+            <p class="view-subtitle">Generate and manage secure API keys for programmatic access to the models</p>
+          </div>
+          <button onclick="handleGenerateKey()" class="btn primary-btn">
+            <i class="fa-solid fa-plus"></i> Generate API Key
+          </button>
+        </div>
+
+        <div class="keys-container">
+          <div class="playground-card glassmorphism">
+            <!-- Key Generation Notification Modal -->
+            <div id="new-key-modal" class="alert success-alert hidden">
+              <div class="alert-icon-title">
+                <i class="fa-solid fa-circle-check"></i>
+                <div>
+                  <h4>API Key Successfully Generated</h4>
+                  <p>Copy this key now. For your security, it will not be shown again.</p>
+                </div>
+              </div>
+              <div class="new-key-display-row">
+                <code id="new-key-raw">sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</code>
+                <button class="copy-raw-btn" onclick="copyNewKey()"><i class="fa-regular fa-copy"></i> Copy Key</button>
+              </div>
+            </div>
+
+            <div class="api-docs-box">
+              <h3><i class="fa-solid fa-code text-cyan"></i> API Usage Documentation</h3>
+              <p>Authorize your application requests by passing your API Key inside the header:</p>
+              <pre class="curl-code">curl -X POST http://localhost:3000/api/v1/predict \
+  -H "X-API-Key: sk-your-generated-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "I love using this model serving wrapper!"}'</pre>
+            </div>
+
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Key Prefix</th>
+                    <th>Associated User</th>
+                    <th>Role</th>
+                    <th>Status</th>
+                    <th>Last Active</th>
+                    <th>Created At</th>
+                  </tr>
+                </thead>
+                <tbody id="keys-table-body">
+                  <tr>
+                    <td colspan="6" class="table-loading">No API Keys active. Click "Generate API Key" above.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. HISTORY VIEW -->
+      <section id="tab-history" class="tab-view">
+        <div class="view-header">
+          <div>
+            <h1 class="view-title">Inference History</h1>
+            <p class="view-subtitle">Browse, filter, and audit logs of all past prediction requests</p>
+          </div>
+          <div class="filter-row">
+            <div class="select-wrapper">
+              <select id="history-filter-model" onchange="loadHistory(1)">
+                <option value="">All Models</option>
+                <option value="v1">Model v1</option>
+                <option value="v2">Model v2</option>
+              </select>
+            </div>
+            <div class="select-wrapper">
+              <select id="history-filter-status" onchange="loadHistory(1)">
+                <option value="">All Statuses</option>
+                <option value="success">Success</option>
+                <option value="error">Error</option>
+                <option value="timeout">Timeout</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="history-container">
+          <div class="playground-card glassmorphism">
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Request ID</th>
+                    <th>Input Text</th>
+                    <th>Model</th>
+                    <th>Inference Label</th>
+                    <th>Confidence</th>
+                    <th>Latency</th>
+                    <th>Status</th>
+                    <th>Time</th>
+                  </tr>
+                </thead>
+                <tbody id="history-table-body">
+                  <tr>
+                    <td colspan="8" class="table-loading">Loading prediction history...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Pagination Controller -->
+            <div class="pagination-footer">
+              <span class="pagination-info" id="pagination-info">Showing page 0 of 0</span>
+              <div class="pagination-btns">
+                <button class="btn pagination-btn" id="pagination-prev" onclick="changeHistoryPage(-1)"><i class="fa-solid fa-chevron-left"></i> Previous</button>
+                <button class="btn pagination-btn" id="pagination-next" onclick="changeHistoryPage(1)">Next <i class="fa-solid fa-chevron-right"></i></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. ADMIN PANEL VIEW -->
+      <section id="tab-admin" class="tab-view">
+        <div class="view-header">
+          <div>
+            <h1 class="view-title">Admin Dashboard</h1>
+            <p class="view-subtitle">Manage model traffic routing and view system-wide operations analytics</p>
+          </div>
+        </div>
+
+        <!-- Metric Cards -->
+        <div class="admin-metrics-row">
+          <div class="metric-card glassmorphism">
+            <div class="metric-icon-wrap bg-violet-fade"><i class="fa-solid fa-bolt"></i></div>
+            <div class="metric-details">
+              <span class="metric-label">Total Predictions (24h)</span>
+              <h3 class="metric-value" id="admin-metric-total">0</h3>
+            </div>
+          </div>
+          <div class="metric-card glassmorphism">
+            <div class="metric-icon-wrap bg-green-fade"><i class="fa-regular fa-circle-check"></i></div>
+            <div class="metric-details">
+              <span class="metric-label">Success Rate</span>
+              <h3 class="metric-value" id="admin-metric-success">N/A</h3>
+            </div>
+          </div>
+          <div class="metric-card glassmorphism">
+            <div class="metric-icon-wrap bg-cyan-fade"><i class="fa-solid fa-stopwatch"></i></div>
+            <div class="metric-details">
+              <span class="metric-label">Avg Latency (Success)</span>
+              <h3 class="metric-value" id="admin-metric-latency">0 ms</h3>
+            </div>
+          </div>
+          <div class="metric-card glassmorphism">
+            <div class="metric-icon-wrap bg-red-fade"><i class="fa-solid fa-bug"></i></div>
+            <div class="metric-details">
+              <span class="metric-label">Errors / Timeouts</span>
+              <h3 class="metric-value" id="admin-metric-errors">0</h3>
+            </div>
+          </div>
+        </div>
+
+        <div class="admin-grid">
+          <!-- A/B Traffic Weight Control -->
+          <div class="admin-card glassmorphism flex-col">
+            <h2 class="card-title"><i class="fa-solid fa-arrows-split-up-and-left text-violet"></i> A/B Traffic Routing Control</h2>
+            <p class="card-desc">Adjust the slider to dynamically divide incoming 'auto' requests between model versions v1 and v2.</p>
+            
+            <div class="traffic-slider-wrapper">
+              <div class="traffic-labels-row">
+                <span class="traffic-label-bold text-violet">Model v1 (Stable)<br><span class="weight-pct" id="split-v1-label">80%</span></span>
+                <span class="traffic-label-bold text-cyan">Model v2 (Canary)<br><span class="weight-pct" id="split-v2-label">20%</span></span>
+              </div>
+              <input type="range" id="traffic-slider" min="0" max="100" value="80" class="gradient-slider" oninput="updateSliderLabels(this.value)" onchange="saveTrafficWeights(this.value)">
+              <div class="slider-ticks">
+                <span>100% v1</span>
+                <span>50/50</span>
+                <span>100% v2</span>
+              </div>
+            </div>
+
+            <!-- Model Metadata Info -->
+            <div class="model-metadata-list" id="model-metadata-list">
+              <!-- Populated via JS -->
+            </div>
+          </div>
+
+          <!-- Charts -->
+          <div class="admin-card glassmorphism">
+            <h2 class="card-title"><i class="fa-solid fa-chart-pie text-cyan"></i> Analytics Visualization</h2>
+            <div class="charts-row">
+              <div class="chart-box">
+                <canvas id="latencyChart"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Toast Notification System -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- App Logic Javascript -->
+  <script src="js/app.js"></script>
+</body>
+</html>

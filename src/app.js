@@ -4,6 +4,7 @@ const cors = require('cors');
 const compression = require('compression');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
+const path = require('path');
 
 const config = require('./config');
 const logger = require('./utils/logger');
@@ -92,6 +93,9 @@ const createApp = () => {
 
   // ── Trust proxy (for correct IP behind reverse proxy / load balancer) ───────
   app.set('trust proxy', 1);
+
+  // ── Serve Static Frontend Dashboard ─────────────────────────────────────────
+  app.use(express.static(path.join(__dirname, 'public')));
 
   // ── Routes ──────────────────────────────────────────────────────────────────
   app.use('/health', healthRoutes);
