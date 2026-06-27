@@ -58,7 +58,7 @@ const getAnalytics = async (req, res, next) => {
     const hours = Math.min(720, parseInt(req.query.hours, 10) || 24);
     const since = new Date(Date.now() - hours * 60 * 60 * 1000);
 
-    const [totalStats, modelStats, latencyStats, errorStats] = await Promise.all([
+    const [totalStats, modelStats, latencyStats, errorStats, sentimentStats, timeSeriesStats] = await Promise.all([
       // Total predictions
       Prediction.countDocuments({ createdAt: { $gte: since } }),
 
@@ -86,10 +86,60 @@ const getAnalytics = async (req, res, next) => {
         { $match: { createdAt: { $gte: since } } },
         { $group: { _id: '$status', count: { $sum: 1 } } },
       ]),
+
+      // Sentiment distribution breakdown
+      Prediction.aggregate([
+        { $match: { createdAt: { $gte: since }, status: 'success' } },
+        { $group: { _id: '$output.label', count: { $sum: 1 } } },
+      ]),
+
+      // Hourly time series (throughput, latency, error count)
+      Prediction.aggregate([
+        { $match: { createdAt: { $gte: since } } },
+        {
+          $group: {
+            _id: {
+              $dateToString: { format: '%Y-%m-%d %H:00', date: '$createdAt', timezone: 'UTC' }
+            },
+            count: { $sum: 1 },
+            avgLatency: { $avg: '$latencyMs' },
+            errorCount: {
+              $sum: { $cond: [{ $ne: ['$status', 'success'] }, 1, 0] }
+            }
+          }
+        },
+        { $sort: { _id: 1 } }
+      ]),
     ]);
 
     const errorMap = {};
     errorStats.forEach((s) => { errorMap[s._id] = s.count; });
+
+    // Map timeSeries results into an hour-based object
+    const timeSeriesMap = {};
+    timeSeriesStats.forEach((t) => {
+      timeSeriesMap[t._id] = {
+        count: t.count,
+        avgLatencyMs: Math.round(t.avgLatency),
+        errorCount: t.errorCount,
+      };
+    });
+
+    const filledTimeSeries = [];
+    for (let i = hours - 1; i >= 0; i--) {
+      const d = new Date(Date.now() - i * 60 * 60 * 1000);
+      const year = d.getUTCFullYear();
+      const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(d.getUTCDate()).padStart(2, '0');
+      const hour = String(d.getUTCHours()).padStart(2, '0');
+      const dateStr = `${year}-${month}-${day} ${hour}:00`;
+
+      const existing = timeSeriesMap[dateStr] || { count: 0, avgLatencyMs: 0, errorCount: 0 };
+      filledTimeSeries.push({
+        time: dateStr,
+        ...existing,
+      });
+    }
 
     return sendSuccess(res, {
       period: { hours, since },
@@ -106,6 +156,11 @@ const getAnalytics = async (req, res, next) => {
         predictions: m.count,
         avgLatencyMs: Math.round(m.avgLatency),
       })),
+      sentimentDistribution: sentimentStats.map((s) => ({
+        sentiment: s._id || 'UNKNOWN',
+        count: s.count,
+      })),
+      timeSeries: filledTimeSeries,
       latency: latencyStats[0]
         ? {
             avgMs: Math.round(latencyStats[0].p50),

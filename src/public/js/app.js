@@ -8,6 +8,8 @@ let currentToken = localStorage.getItem('token') || null;
 let historyPage  = 1;
 const HISTORY_LIMIT = 10;
 let analyticsChart = null;
+let hourlyTrendChartInstance = null;
+let sentimentChartInstance = null;
 
 // ── Char counter ────────────────────────────────
 const inferenceTA = document.getElementById('inference-text');
@@ -432,6 +434,7 @@ function renderAdminAnalytics(data) {
   document.getElementById('admin-metric-latency').textContent = data.latency ? `${data.latency.avgMs} ms` : '—';
   document.getElementById('admin-metric-errors').textContent  = (data.summary.errorCount || 0) + (data.summary.timeoutCount || 0);
 
+  // 1. Throughput vs Latency (Model breakdown)
   const ctx = document.getElementById('latencyChart').getContext('2d');
   if (analyticsChart) { analyticsChart.destroy(); analyticsChart = null; }
 
@@ -481,6 +484,115 @@ function renderAdminAnalytics(data) {
                title: { display: true, text: 'Latency ms', color: '#555', font: { size: 10 } }, position: 'right' },
       },
     },
+  });
+
+  // 2. Hourly Trend (throughput, latency, errors)
+  const hourlyCtx = document.getElementById('hourlyTrendChart').getContext('2d');
+  if (hourlyTrendChartInstance) { hourlyTrendChartInstance.destroy(); hourlyTrendChartInstance = null; }
+
+  const hourlyLabels = data.timeSeries.map(t => {
+    const timeParts = t.time.split(' ');
+    return timeParts.length > 1 ? timeParts[1] : t.time;
+  });
+  const hourlyThroughput = data.timeSeries.map(t => t.count);
+  const hourlyLatencies = data.timeSeries.map(t => t.avgLatencyMs);
+  const hourlyErrors = data.timeSeries.map(t => t.errorCount);
+
+  hourlyTrendChartInstance = new Chart(hourlyCtx, {
+    type: 'line',
+    data: {
+      labels: hourlyLabels,
+      datasets: [
+        {
+          label: 'Requests',
+          data: hourlyThroughput,
+          borderColor: '#B8FF3C',
+          backgroundColor: 'rgba(184,255,60,0.05)',
+          fill: true,
+          borderWidth: 2,
+          tension: 0.3,
+          pointRadius: 2,
+          yAxisID: 'y',
+        },
+        {
+          label: 'Avg Latency (ms)',
+          data: hourlyLatencies,
+          borderColor: '#3DEB8A',
+          backgroundColor: 'transparent',
+          borderWidth: 1.5,
+          tension: 0.3,
+          pointRadius: 2,
+          yAxisID: 'y1',
+        },
+        {
+          label: 'Errors',
+          data: hourlyErrors,
+          borderColor: '#EF4444',
+          backgroundColor: 'transparent',
+          borderWidth: 1.5,
+          tension: 0.1,
+          pointRadius: 2,
+          yAxisID: 'y',
+        }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: '#888', font: { family: 'JetBrains Mono', size: 11 }, boxWidth: 12, padding: 8 } },
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#555', font: { family: 'JetBrains Mono', size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 8 } },
+        y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#555', font: { family: 'JetBrains Mono', size: 10 } }, position: 'left', title: { display: true, text: 'Requests / Errors', color: '#555', font: { size: 9 } } },
+        y1: { grid: { drawOnChartArea: false }, ticks: { color: '#555', font: { family: 'JetBrains Mono', size: 10 } }, position: 'right', title: { display: true, text: 'Latency (ms)', color: '#555', font: { size: 9 } } }
+      }
+    }
+  });
+
+  // 3. Sentiment Distribution (doughnut chart)
+  const sentimentCtx = document.getElementById('sentimentChart').getContext('2d');
+  if (sentimentChartInstance) { sentimentChartInstance.destroy(); sentimentChartInstance = null; }
+
+  const sentimentLabels = data.sentimentDistribution.map(s => s.sentiment);
+  const sentimentCounts = data.sentimentDistribution.map(s => s.count);
+
+  const hasData = sentimentCounts.some(c => c > 0);
+  const chartLabels = hasData ? sentimentLabels : ['NO DATA'];
+  const chartData = hasData ? sentimentCounts : [1];
+  const chartColors = hasData 
+    ? sentimentLabels.map(label => {
+        if (label === 'POSITIVE') return 'rgba(61,235,138,0.7)';
+        if (label === 'NEGATIVE') return 'rgba(239,68,68,0.7)';
+        return 'rgba(107,114,128,0.7)';
+      })
+    : ['rgba(255,255,255,0.08)'];
+
+  const borderColors = hasData 
+    ? sentimentLabels.map(label => {
+        if (label === 'POSITIVE') return '#3DEB8A';
+        if (label === 'NEGATIVE') return '#EF4444';
+        return '#6B7280';
+      })
+    : ['rgba(255,255,255,0.12)'];
+
+  sentimentChartInstance = new Chart(sentimentCtx, {
+    type: 'doughnut',
+    data: {
+      labels: chartLabels,
+      datasets: [{
+        data: chartData,
+        backgroundColor: chartColors,
+        borderColor: borderColors,
+        borderWidth: 1.5,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      cutout: '65%',
+      plugins: {
+        legend: { position: 'right', labels: { color: '#888', font: { family: 'JetBrains Mono', size: 11 }, boxWidth: 12, padding: 12 } }
+      }
+    }
   });
 }
 
