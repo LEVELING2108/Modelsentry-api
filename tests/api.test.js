@@ -257,6 +257,18 @@ describe('GET /api/v1/admin/analytics', () => {
     expect(res.body.data).toHaveProperty('summary');
     expect(res.body.data).toHaveProperty('sentimentDistribution');
     expect(res.body.data).toHaveProperty('timeSeries');
+    expect(res.body.data).toHaveProperty('byModel');
+    
+    // Check comparative metrics
+    if (res.body.data.byModel.length > 0) {
+      const modelStat = res.body.data.byModel[0];
+      expect(modelStat).toHaveProperty('errorRate');
+      expect(modelStat).toHaveProperty('avgConfidence');
+      expect(modelStat).toHaveProperty('sentiment');
+      expect(modelStat.sentiment).toHaveProperty('POSITIVE');
+      expect(modelStat.sentiment).toHaveProperty('NEGATIVE');
+      expect(modelStat.sentiment).toHaveProperty('NEUTRAL');
+    }
   });
 });
 

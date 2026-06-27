@@ -520,6 +520,35 @@
           </div>
         </div>
       </div>
+
+      <!-- A/B Comparison Side-by-Side Panel -->
+      <div class="card" style="margin-top: 24px;">
+        <div class="card-header">
+          <div class="card-header-icon icon-lime"><i class="fa-solid fa-scale-balanced"></i></div>
+          <div>
+            <div class="card-title">Stable vs Canary Side-by-Side Audit</div>
+            <div class="card-desc">Comparative performance diagnostic telemetry &amp; distribution metrics</div>
+          </div>
+        </div>
+
+        <div class="table-wrap" style="margin-top:16px;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Model Version</th>
+                <th>Inferences</th>
+                <th>Avg Latency (ms)</th>
+                <th>Error Rate</th>
+                <th>Avg Confidence</th>
+                <th>Sentiment Distribution (Pos / Neg / Neut)</th>
+              </tr>
+            </thead>
+            <tbody id="ab-comparison-tbody">
+              <tr><td colspan="6" class="table-empty">Fetching comparison telemetry…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </section>
 
   </main>
