@@ -131,7 +131,7 @@ describe('POST /api/v1/predict', () => {
   });
 
   it('should cache predictions and return cached: true for subsequent requests', async () => {
-    const text = 'Redis caching test payload!';
+    const text = `Redis caching test payload! ${Date.now()}-${Math.random()}`;
     const res1 = await request(app)
       .post('/api/v1/predict')
       .set('Authorization', `Bearer ${token}`)
@@ -233,6 +233,32 @@ describe('POST /api/v1/predict/batch', () => {
       .send({ inputs });
 
     expect(res.status).toBe(422);
+  });
+});
+
+// ── Admin Analytics Tests ──────────────────────────────────────────────────
+describe('GET /api/v1/admin/analytics', () => {
+  let token;
+
+  beforeEach(async () => {
+    await registerUser();
+    await User.findOneAndUpdate({ email: 'test@example.com' }, { role: 'admin' });
+    const res = await loginUser();
+    token = res.body.data.token;
+  });
+
+  it('should return analytics metrics, sentimentDistribution, and timeSeries', async () => {
+    const res = await request(app)
+      .get('/api/v1/admin/analytics')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).toHaveProperty('summary');
+    expect(res.body.data).toHaveProperty('sentimentDistribution');
+    expect(res.body.data).toHaveProperty('timeSeries');
+    expect(Array.isArray(res.body.data.timeSeries)).toBe(true);
+    expect(res.body.data.timeSeries.length).toBe(24);
   });
 });
 
