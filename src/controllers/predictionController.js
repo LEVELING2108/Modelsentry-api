@@ -6,40 +6,49 @@ const logger = require('../utils/logger');
 
 const predict = async (req, res, next) => {
   const requestId = req.requestId || uuidv4();
-  const { text, modelVersion, options } = req.body;
+  const { text, modelVersion, task = 'sentiment', options } = req.body;
 
   if (req.authType === 'api_key') {
     const userScopes = req.user.apiKeyScopes || [];
     const isWildcard = userScopes.includes('*') || userScopes.includes('predict:*');
 
     if (!isWildcard) {
-      if (modelVersion === 'v1' && !userScopes.includes('predict:v1')) {
-        return sendError(res, "Forbidden: API key lacks required scope 'predict:v1'", 403);
-      }
-      if (modelVersion === 'v2' && !userScopes.includes('predict:v2')) {
-        return sendError(res, "Forbidden: API key lacks required scope 'predict:v2'", 403);
-      }
-      if ((modelVersion === 'auto' || !modelVersion) && (!userScopes.includes('predict:v1') || !userScopes.includes('predict:v2'))) {
-        return sendError(res, "Forbidden: API key lacks required scopes for auto routing (requires both 'predict:v1' and 'predict:v2')", 403);
+      if (task === 'sentiment') {
+        if (modelVersion === 'v1' && !userScopes.includes('predict:v1')) {
+          return sendError(res, "Forbidden: API key lacks required scope 'predict:v1'", 403);
+        }
+        if (modelVersion === 'v2' && !userScopes.includes('predict:v2')) {
+          return sendError(res, "Forbidden: API key lacks required scope 'predict:v2'", 403);
+        }
+        if ((modelVersion === 'auto' || !modelVersion) && (!userScopes.includes('predict:v1') || !userScopes.includes('predict:v2'))) {
+          return sendError(res, "Forbidden: API key lacks required scopes for auto routing (requires both 'predict:v1' and 'predict:v2')", 403);
+        }
+      } else {
+        const requiredScope = `predict:${task}`;
+        if (!userScopes.includes(requiredScope)) {
+          return sendError(res, `Forbidden: API key lacks required scope '${requiredScope}'`, 403);
+        }
       }
     }
   }
 
   try {
-    const result = await runInference(text, modelVersion, options);
+    const result = await runInference(text, modelVersion, task, options);
 
     // Persist prediction log (non-blocking)
     Prediction.create({
       requestId,
       userId: req.user._id,
       modelVersion: result.modelVersion,
-      modelType: 'sentiment',
+      modelType: task,
       input: { text: text.substring(0, 500) }, // Truncate for storage
       inputLength: text.length,
       output: {
         label: result.label,
         confidence: result.confidence,
         scores: result.scores,
+        summaryText: result.summaryText,
+        entities: result.entities,
       },
       latencyMs: result.latencyMs,
       status: 'success',
@@ -53,13 +62,15 @@ const predict = async (req, res, next) => {
     return sendSuccess(res, {
       requestId,
       prediction: {
-        label: result.label,
-        confidence: result.confidence,
+        ...(result.label && { label: result.label }),
+        ...(result.confidence && { confidence: result.confidence }),
         ...(result.scores && { scores: result.scores }),
+        ...(result.summaryText && { summaryText: result.summaryText }),
+        ...(result.entities && { entities: result.entities }),
       },
       model: {
         version: result.modelVersion,
-        type: 'sentiment',
+        type: task,
       },
       performance: {
         latencyMs: result.latencyMs,
@@ -72,7 +83,7 @@ const predict = async (req, res, next) => {
       requestId,
       userId: req.user._id,
       modelVersion: req.body.modelVersion === 'auto' ? 'v1' : req.body.modelVersion,
-      modelType: 'sentiment',
+      modelType: task,
       input: { text: text.substring(0, 200) },
       inputLength: text.length,
       output: {},
@@ -91,12 +102,23 @@ const predict = async (req, res, next) => {
 };
 
 const batchPredict = async (req, res, next) => {
-  const { inputs, modelVersion } = req.body;
+  const { inputs, modelVersion, task = 'sentiment' } = req.body;
   const batchId = uuidv4();
+
+  if (req.authType === 'api_key') {
+    const userScopes = req.user.apiKeyScopes || [];
+    const isWildcard = userScopes.includes('*') || userScopes.includes('predict:*');
+    if (!isWildcard && task !== 'sentiment') {
+      const requiredScope = `predict:${task}`;
+      if (!userScopes.includes(requiredScope)) {
+        return sendError(res, `Forbidden: API key lacks required scope '${requiredScope}'`, 403);
+      }
+    }
+  }
 
   try {
     const startMs = Date.now();
-    const results = await runBatchInference(inputs, modelVersion);
+    const results = await runBatchInference(inputs, modelVersion, task);
     const totalLatencyMs = Date.now() - startMs;
 
     const successful = results.filter((r) => !r.error).length;
@@ -108,6 +130,7 @@ const batchPredict = async (req, res, next) => {
       successful,
       failed,
       totalLatencyMs,
+      task,
     });
 
     return sendSuccess(res, {

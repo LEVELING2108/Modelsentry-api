@@ -165,25 +165,28 @@
               </div>
             </div>
 
-            <div class="form-row">
-              <div class="input-group">
-                <label>Model routing</label>
-                <select id="inference-version">
-                  <option value="auto">Auto — A/B split</option>
-                  <option value="v1">v1 Stable (DistilBERT)</option>
-                  <option value="v2">v2 Canary (RoBERTa)</option>
+            <div class="form-row" style="display:grid; grid-template-columns: 1fr 1fr auto; gap: 16px; align-items: flex-end; margin-top: 12px;">
+              <div class="input-group" style="margin:0;">
+                <label>Task Type</label>
+                <select id="inference-task" style="width:100%;">
+                  <option value="sentiment">Sentiment Classification</option>
+                  <option value="summarization">Text Summarization</option>
+                  <option value="ner">Named Entity Recognition (NER)</option>
                 </select>
               </div>
-              <div class="checkbox-group">
-                <input type="checkbox" id="inference-scores" checked>
-                <label for="inference-scores">Return scores</label>
+              <div class="input-group" style="margin:0;">
+                <label>Model routing</label>
+                <select id="inference-version" style="width:100%;">
+                  <option value="auto">Auto-route (A/B weights)</option>
+                  <option value="v1">Model v1 (Stable)</option>
+                  <option value="v2">Model v2 (Canary)</option>
+                </select>
               </div>
+              <button type="submit" id="inference-submit-btn" class="btn primary-btn" style="height:38px; display:flex; align-items:center; gap:6px; min-width:150px; justify-content:center;">
+                <span id="inference-btn-text">Run Inference</span>
+                <i class="fa-solid fa-circle-notch spinner hidden" id="inference-spinner"></i>
+              </button>
             </div>
-
-            <button type="submit" id="inference-submit-btn" class="btn primary-btn" style="width:fit-content;min-width:180px;">
-              <span id="inference-btn-text">Run Inference</span>
-              <i class="fa-solid fa-circle-notch spinner hidden" id="inference-spinner"></i>
-            </button>
           </form>
         </div>
 
@@ -222,7 +225,7 @@
               </div>
             </div>
 
-            <div class="scores-section">
+            <div class="scores-section" id="sentiment-results-container">
               <div class="section-eyebrow">Classification Scores</div>
               <div class="score-row">
                 <div class="score-label-row"><span>Positive</span><span id="bar-pos-val">0%</span></div>
@@ -235,6 +238,31 @@
               <div class="score-row">
                 <div class="score-label-row"><span>Neutral</span><span id="bar-neut-val">0%</span></div>
                 <div class="track"><div class="bar bar-neut" id="bar-neut-fill" style="width:0%"></div></div>
+              </div>
+            </div>
+
+            <!-- Summarization Container -->
+            <div class="scores-section hidden" id="summarization-results-container">
+              <div class="section-eyebrow">Model Summary Output</div>
+              <div id="summary-output-text" style="padding:14px; background:var(--ink-raised); border:1px solid var(--ink-border); border-radius:var(--radius); font-size:13px; line-height:1.6; color:var(--t-high); white-space:pre-wrap; border-left: 3px solid var(--lime);"></div>
+            </div>
+
+            <!-- NER Container -->
+            <div class="scores-section hidden" id="ner-results-container">
+              <div class="section-eyebrow">Detected Named Entities</div>
+              <div class="table-wrap" style="border: 1px solid var(--ink-border); border-radius: var(--radius); overflow: hidden; margin-top: 8px;">
+                <table class="data-table" style="margin:0; font-size:12px;">
+                  <thead>
+                    <tr>
+                      <th>Entity Type</th>
+                      <th>Word / Text</th>
+                      <th>Confidence Score</th>
+                    </tr>
+                  </thead>
+                  <tbody id="ner-table-body">
+                    <!-- Entities rendered dynamically -->
+                  </tbody>
+                </table>
               </div>
             </div>
 

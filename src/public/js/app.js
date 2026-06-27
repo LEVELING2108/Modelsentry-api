@@ -169,7 +169,7 @@ async function handleInference(e) {
   e.preventDefault();
   const text         = document.getElementById('inference-text').value;
   const modelVersion = document.getElementById('inference-version').value;
-  const returnScores = document.getElementById('inference-scores').checked;
+  const task         = document.getElementById('inference-task').value;
   const btnText      = document.getElementById('inference-btn-text');
   const spinner      = document.getElementById('inference-spinner');
   const btn          = document.getElementById('inference-submit-btn');
@@ -182,7 +182,7 @@ async function handleInference(e) {
     const res  = await fetch(`${API_URL}/api/v1/predict`, {
       method: 'POST',
       headers: { ...authHeader(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, modelVersion, options: { returnScores } })
+      body: JSON.stringify({ text, modelVersion, task, options: { returnScores: true } })
     });
     const data = await res.json();
     if (data.success) renderPredictionResult(data.data);
@@ -201,26 +201,70 @@ function renderPredictionResult(data) {
   display.classList.remove('hidden');
 
   const { prediction, model, performance } = data;
+  const task = model.type || 'sentiment';
 
-  document.getElementById('result-sentiment-label').textContent = prediction.label;
-  document.getElementById('result-confidence').textContent = `${(prediction.confidence * 100).toFixed(1)}%`;
-  document.getElementById('result-latency').textContent     = `${performance.latencyMs} ms`;
+  document.getElementById('result-latency').textContent = `${performance.latencyMs} ms`;
   document.getElementById('result-model-version').textContent = model.version;
 
   const sBox = document.getElementById('result-sentiment-box');
   sBox.className = 'sentiment-box';
-  if (prediction.label === 'POSITIVE') sBox.classList.add('pos-style');
-  else if (prediction.label === 'NEGATIVE') sBox.classList.add('neg-style');
-  else sBox.classList.add('neut-style');
 
-  const scores = prediction.scores || {};
-  const pos = scores.POSITIVE || 0;
-  const neg = scores.NEGATIVE || 0;
-  const neu = scores.NEUTRAL  || 0;
+  // Toggle result sections based on task
+  const sentimentSection = document.getElementById('sentiment-results-container');
+  const summarizationSection = document.getElementById('summarization-results-container');
+  const nerSection = document.getElementById('ner-results-container');
 
-  setBar('pos', pos);
-  setBar('neg', neg);
-  setBar('neut', neu);
+  sentimentSection.classList.add('hidden');
+  summarizationSection.classList.add('hidden');
+  nerSection.classList.add('hidden');
+
+  if (task === 'sentiment') {
+    sentimentSection.classList.remove('hidden');
+    document.getElementById('result-sentiment-label').textContent = prediction.label;
+    document.getElementById('result-confidence').textContent = `${(prediction.confidence * 100).toFixed(1)}%`;
+
+    if (prediction.label === 'POSITIVE') sBox.classList.add('pos-style');
+    else if (prediction.label === 'NEGATIVE') sBox.classList.add('neg-style');
+    else sBox.classList.add('neut-style');
+
+    const scores = prediction.scores || {};
+    const pos = scores.POSITIVE || 0;
+    const neg = scores.NEGATIVE || 0;
+    const neu = scores.NEUTRAL  || 0;
+
+    setBar('pos', pos);
+    setBar('neg', neg);
+    setBar('neut', neu);
+  } else if (task === 'summarization') {
+    summarizationSection.classList.remove('hidden');
+    sBox.classList.add('neut-style');
+    document.getElementById('result-sentiment-label').textContent = 'SUMMARY';
+    document.getElementById('result-confidence').textContent = '100.0%';
+    document.getElementById('summary-output-text').textContent = prediction.summaryText;
+  } else if (task === 'ner') {
+    nerSection.classList.remove('hidden');
+    sBox.classList.add('neut-style');
+    document.getElementById('result-sentiment-label').textContent = 'NER';
+
+    const entities = prediction.entities || [];
+    const avgConf = entities.length > 0
+      ? (entities.reduce((acc, curr) => acc + curr.score, 0) / entities.length)
+      : 0;
+    document.getElementById('result-confidence').textContent = `${(avgConf * 100).toFixed(1)}%`;
+
+    const tbody = document.getElementById('ner-table-body');
+    if (entities.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="3" class="table-empty">No entities identified.</td></tr>';
+    } else {
+      tbody.innerHTML = entities.map(e => `
+        <tr>
+          <td><span class="badge badge-mono" style="background:rgba(255,255,255,0.06); font-weight:600;">${e.entity}</span></td>
+          <td style="font-weight:500; color:var(--t-high);">${e.word}</td>
+          <td style="font-family:var(--f-mono);">${(e.score * 100).toFixed(1)}%</td>
+        </tr>
+      `).join('');
+    }
+  }
 
   document.getElementById('result-json-block').textContent = JSON.stringify({ success: true, data }, null, 2);
 }
