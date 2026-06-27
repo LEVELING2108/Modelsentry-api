@@ -8,6 +8,23 @@ const predict = async (req, res, next) => {
   const requestId = req.requestId || uuidv4();
   const { text, modelVersion, options } = req.body;
 
+  if (req.authType === 'api_key') {
+    const userScopes = req.user.apiKeyScopes || [];
+    const isWildcard = userScopes.includes('*') || userScopes.includes('predict:*');
+
+    if (!isWildcard) {
+      if (modelVersion === 'v1' && !userScopes.includes('predict:v1')) {
+        return sendError(res, "Forbidden: API key lacks required scope 'predict:v1'", 403);
+      }
+      if (modelVersion === 'v2' && !userScopes.includes('predict:v2')) {
+        return sendError(res, "Forbidden: API key lacks required scope 'predict:v2'", 403);
+      }
+      if ((modelVersion === 'auto' || !modelVersion) && (!userScopes.includes('predict:v1') || !userScopes.includes('predict:v2'))) {
+        return sendError(res, "Forbidden: API key lacks required scopes for auto routing (requires both 'predict:v1' and 'predict:v2')", 403);
+      }
+    }
+  }
+
   try {
     const result = await runInference(text, modelVersion, options);
 

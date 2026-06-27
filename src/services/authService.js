@@ -45,7 +45,7 @@ const login = async ({ email, password }) => {
   return { token, user: user.toSafeObject() };
 };
 
-const generateApiKey = async (userId) => {
+const generateApiKey = async (userId, scopes, rateLimit) => {
   const user = await User.findById(userId);
   if (!user) {
     const err = new Error('User not found');
@@ -53,8 +53,15 @@ const generateApiKey = async (userId) => {
     throw err;
   }
 
+  if (scopes) {
+    user.apiKeyScopes = Array.isArray(scopes) ? scopes : [scopes];
+  }
+  if (rateLimit) {
+    user.apiKeyRateLimit = parseInt(rateLimit, 10) || 100;
+  }
+
   const rawKey = await user.generateApiKey();
-  logger.info('API key generated', { userId, prefix: user.apiKeyPrefix });
+  logger.info('API key generated', { userId, prefix: user.apiKeyPrefix, scopes: user.apiKeyScopes, rateLimit: user.apiKeyRateLimit });
 
   return { apiKey: rawKey, prefix: user.apiKeyPrefix };
 };

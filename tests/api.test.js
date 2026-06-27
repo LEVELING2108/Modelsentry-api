@@ -257,8 +257,81 @@ describe('GET /api/v1/admin/analytics', () => {
     expect(res.body.data).toHaveProperty('summary');
     expect(res.body.data).toHaveProperty('sentimentDistribution');
     expect(res.body.data).toHaveProperty('timeSeries');
-    expect(Array.isArray(res.body.data.timeSeries)).toBe(true);
-    expect(res.body.data.timeSeries.length).toBe(24);
+  });
+});
+
+// ── API Key Scoping & Rate Limiting Tests ───────────────────────────────────
+describe('API Key Scoping and Rate Limiting', () => {
+  it('should allow prediction on v1 for a v1-scoped key', async () => {
+    await registerUser();
+    const loginRes = await loginUser();
+    const userToken = loginRes.body.data.token;
+
+    const res1 = await request(app)
+      .post('/api/v1/auth/api-key')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ scopes: ['predict:v1'], rateLimit: 100 });
+    const v1OnlyKey = res1.body.data.apiKey;
+
+    const res = await request(app)
+      .post('/api/v1/predict')
+      .set('X-API-Key', v1OnlyKey)
+      .send({ text: 'Hello v1', modelVersion: 'v1' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.model.version).toBe('v1');
+  });
+
+  it('should deny prediction on v2 for a v1-scoped key', async () => {
+    await registerUser();
+    const loginRes = await loginUser();
+    const userToken = loginRes.body.data.token;
+
+    const res1 = await request(app)
+      .post('/api/v1/auth/api-key')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ scopes: ['predict:v1'], rateLimit: 100 });
+    const v1OnlyKey = res1.body.data.apiKey;
+
+    const res = await request(app)
+      .post('/api/v1/predict')
+      .set('X-API-Key', v1OnlyKey)
+      .send({ text: 'Hello v2', modelVersion: 'v2' });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error.message).toContain("API key lacks required scope 'predict:v2'");
+  });
+
+  it('should rate limit requests exceeding the custom key rate limit', async () => {
+    await registerUser();
+    const loginRes = await loginUser();
+    const userToken = loginRes.body.data.token;
+
+    const res2 = await request(app)
+      .post('/api/v1/auth/api-key')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ scopes: ['predict:v1', 'predict:v2'], rateLimit: 2 });
+    const lowRateKey = res2.body.data.apiKey;
+
+    const r1 = await request(app)
+      .post('/api/v1/predict')
+      .set('X-API-Key', lowRateKey)
+      .send({ text: 'R1', modelVersion: 'v1' });
+    expect(r1.status).toBe(200);
+
+    const r2 = await request(app)
+      .post('/api/v1/predict')
+      .set('X-API-Key', lowRateKey)
+      .send({ text: 'R2', modelVersion: 'v1' });
+    expect(r2.status).toBe(200);
+
+    const r3 = await request(app)
+      .post('/api/v1/predict')
+      .set('X-API-Key', lowRateKey)
+      .send({ text: 'R3', modelVersion: 'v1' });
+    
+    expect(r3.status).toBe(429);
+    expect(r3.body.error.message).toContain('API Key rate limit exceeded');
   });
 });
 

@@ -28,7 +28,8 @@ const getMe = async (req, res) => {
 
 const generateApiKey = async (req, res, next) => {
   try {
-    const result = await authService.generateApiKey(req.user._id);
+    const { scopes, rateLimit } = req.body;
+    const result = await authService.generateApiKey(req.user._id, scopes, rateLimit);
     return sendSuccess(res, {
       ...result,
       warning: 'Store this API key securely — it will not be shown again.',
