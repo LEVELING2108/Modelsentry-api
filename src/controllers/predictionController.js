@@ -46,6 +46,7 @@ const predict = async (req, res, next) => {
       },
       performance: {
         latencyMs: result.latencyMs,
+        ...(result.cached && { cached: true }),
       },
     });
   } catch (error) {

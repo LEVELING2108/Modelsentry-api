@@ -32,6 +32,13 @@ const config = {
     v2ModelId: process.env.MODEL_V2_ID || 'cardiffnlp/twitter-roberta-base-sentiment-latest',
   },
 
+  redis: {
+    host: process.env.REDIS_HOST || 'localhost',
+    port: parseInt(process.env.REDIS_PORT, 10) || 6379,
+    ttlSec: parseInt(process.env.REDIS_TTL_SEC, 10) || 86400,
+    enabled: process.env.REDIS_ENABLED !== 'false',
+  },
+
   logging: {
     level: process.env.LOG_LEVEL || 'info',
     file: process.env.LOG_FILE || 'logs/app.log',
