@@ -4,6 +4,7 @@ const config = require('./config');
 const logger = require('./utils/logger');
 const { metrics } = require('./utils/metrics');
 const ModelMetadata = require('./models/ModelMetadata');
+const { connectionTracker } = require('./middleware/metricsMiddleware');
 
 const start = async () => {
   // Connect to MongoDB
@@ -21,6 +22,8 @@ const start = async () => {
       pid: process.pid,
     });
   });
+
+  connectionTracker(server);
 
   // Initialise A/B traffic gauges
   metrics.modelABTrafficGauge.set({ model_version: 'v1' }, config.model.v1Weight);

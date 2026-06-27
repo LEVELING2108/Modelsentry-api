@@ -1,26 +1,38 @@
-// ── Configuration ──────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════
+//  ModelSentry — Frontend v2.0
+// ═══════════════════════════════════════════════
+
 const API_URL = window.location.origin;
-let currentUser = null;
+let currentUser  = null;
 let currentToken = localStorage.getItem('token') || null;
-let historyPage = 1;
-const historyLimit = 10;
+let historyPage  = 1;
+const HISTORY_LIMIT = 10;
 let analyticsChart = null;
 
-// Character counter for textarea
-const inferenceTextarea = document.getElementById('inference-text');
+// ── Char counter ────────────────────────────────
+const inferenceTA = document.getElementById('inference-text');
 const charCounter = document.getElementById('char-counter');
-if (inferenceTextarea) {
-  inferenceTextarea.addEventListener('input', (e) => {
-    const len = e.target.value.length;
-    charCounter.textContent = `${len} / 5000 chars`;
+if (inferenceTA) {
+  inferenceTA.addEventListener('input', () => {
+    const len = inferenceTA.value.length;
+    charCounter.textContent = `${len} / 5000`;
+    charCounter.classList.toggle('warn-count', len > 4500);
   });
 }
 
-// ── Authentication Checks ───────────────────────────────────────────────────
+// ── Traffic slider gradient fill ────────────────
+function updateSliderFill(slider) {
+  const pct = slider.value;
+  slider.style.background = `linear-gradient(90deg, var(--lime) ${pct}%, rgba(255,255,255,0.08) ${pct}%)`;
+}
+
+// ═══════════════════════════════════════════════
+//  INIT & AUTH
+// ═══════════════════════════════════════════════
 async function initApp() {
   if (currentToken) {
-    const success = await loadUserProfile();
-    if (success) {
+    const ok = await loadUserProfile();
+    if (ok) {
       document.getElementById('auth-overlay').classList.add('hidden');
       document.getElementById('app-container').classList.remove('hidden');
       showTab('playground');
@@ -36,203 +48,147 @@ async function initApp() {
 
 async function loadUserProfile() {
   try {
-    const response = await fetch(`${API_URL}/api/v1/auth/me`, {
-      headers: { 'Authorization': `Bearer ${currentToken}` }
-    });
-    const result = await response.json();
-    if (result.success) {
-      currentUser = result.data.user;
-      renderUserSection();
-      return true;
-    }
+    const res  = await fetch(`${API_URL}/api/v1/auth/me`, { headers: authHeader() });
+    const data = await res.json();
+    if (data.success) { currentUser = data.data.user; renderUserSection(); return true; }
     return false;
-  } catch (err) {
-    console.error('Failed to load profile:', err);
-    return false;
-  }
+  } catch { return false; }
 }
 
 function renderUserSection() {
   if (!currentUser) return;
-  // Avatar initials
   const initials = currentUser.name.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
   document.getElementById('avatar-letters').textContent = initials;
   document.getElementById('user-display-name').textContent = currentUser.name;
-  
-  const roleSpan = document.getElementById('user-display-role');
-  roleSpan.textContent = currentUser.role;
-  if (currentUser.role === 'admin') {
-    roleSpan.className = 'user-role badge-admin';
-    document.getElementById('nav-admin').classList.remove('hidden');
-  } else {
-    roleSpan.className = 'user-role badge-user';
-    document.getElementById('nav-admin').classList.add('hidden');
-  }
+
+  const roleEl = document.getElementById('user-display-role');
+  roleEl.textContent = currentUser.role;
+  roleEl.className = `user-role ${currentUser.role === 'admin' ? 'badge-admin' : 'badge-user'}`;
+
+  const adminNav = document.getElementById('nav-admin');
+  if (currentUser.role === 'admin') adminNav.classList.remove('hidden');
+  else adminNav.classList.add('hidden');
 }
 
-// ── Auth View Controllers ───────────────────────────────────────────────────
-function switchAuthTab(mode) {
-  const loginTabBtn = document.getElementById('tab-login-btn');
-  const registerTabBtn = document.getElementById('tab-register-btn');
-  const loginForm = document.getElementById('login-form');
-  const registerForm = document.getElementById('register-form');
-  const authAlert = document.getElementById('auth-alert');
-  
-  authAlert.classList.add('hidden');
+function authHeader() {
+  return { 'Authorization': `Bearer ${currentToken}` };
+}
 
-  if (mode === 'login') {
-    loginTabBtn.classList.add('active');
-    registerTabBtn.classList.remove('active');
-    loginForm.classList.remove('hidden');
-    registerForm.classList.add('hidden');
-  } else {
-    loginTabBtn.classList.remove('active');
-    registerTabBtn.classList.add('active');
-    loginForm.classList.add('hidden');
-    registerForm.classList.remove('hidden');
-  }
+// ═══════════════════════════════════════════════
+//  AUTH FORMS
+// ═══════════════════════════════════════════════
+function switchAuthTab(mode) {
+  document.getElementById('tab-login-btn').classList.toggle('active', mode === 'login');
+  document.getElementById('tab-register-btn').classList.toggle('active', mode !== 'login');
+  document.getElementById('login-form').classList.toggle('hidden', mode !== 'login');
+  document.getElementById('register-form').classList.toggle('hidden', mode === 'login');
+  showAuthAlert(null);
 }
 
 async function handleLogin(e) {
   e.preventDefault();
-  const email = document.getElementById('login-email').value;
+  const email    = document.getElementById('login-email').value;
   const password = document.getElementById('login-password').value;
-  const alertBox = document.getElementById('auth-alert');
-  const alertMsg = document.getElementById('auth-alert-msg');
-  
-  alertBox.classList.add('hidden');
-
+  showAuthAlert(null);
   try {
-    const response = await fetch(`${API_URL}/api/v1/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    const res  = await fetch(`${API_URL}/api/v1/auth/login`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password })
     });
-    
-    const result = await response.json();
-    if (result.success) {
-      currentToken = result.data.token;
+    const data = await res.json();
+    if (data.success) {
+      currentToken = data.data.token;
       localStorage.setItem('token', currentToken);
-      showToast('Successfully logged in', 'success');
+      showToast('Signed in successfully', 'success');
       await initApp();
-    } else {
-      alertMsg.textContent = result.error.message || 'Invalid credentials';
-      alertBox.classList.remove('hidden');
-    }
-  } catch (err) {
-    alertMsg.textContent = 'Server connection failed. Try again.';
-    alertBox.classList.remove('hidden');
-  }
+    } else { showAuthAlert(data.error.message || 'Invalid credentials'); }
+  } catch { showAuthAlert('Connection failed — check the server is running'); }
 }
 
 async function handleRegister(e) {
   e.preventDefault();
-  const name = document.getElementById('reg-name').value;
-  const email = document.getElementById('reg-email').value;
+  const name     = document.getElementById('reg-name').value;
+  const email    = document.getElementById('reg-email').value;
   const password = document.getElementById('reg-password').value;
-  const isAdmin = document.getElementById('reg-admin').checked;
-  const alertBox = document.getElementById('auth-alert');
-  const alertMsg = document.getElementById('auth-alert-msg');
-
-  alertBox.classList.add('hidden');
-
+  const role     = document.getElementById('reg-admin').checked ? 'admin' : 'user';
+  showAuthAlert(null);
   try {
-    const role = isAdmin ? 'admin' : 'user';
-    const response = await fetch(`${API_URL}/api/v1/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    const res  = await fetch(`${API_URL}/api/v1/auth/register`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, email, password, role })
     });
-
-    const result = await response.json();
-    if (result.success) {
-      currentToken = result.data.token;
+    const data = await res.json();
+    if (data.success) {
+      currentToken = data.data.token;
       localStorage.setItem('token', currentToken);
-      showToast('Registration successful!', 'success');
+      showToast('Account created!', 'success');
       await initApp();
-    } else {
-      alertMsg.textContent = result.error.message || 'Registration failed';
-      alertBox.classList.remove('hidden');
-    }
-  } catch (err) {
-    alertMsg.textContent = 'Connection error. Please try again.';
-    alertBox.classList.remove('hidden');
-  }
+    } else { showAuthAlert(data.error.message || 'Registration failed'); }
+  } catch { showAuthAlert('Connection error — try again'); }
+}
+
+function showAuthAlert(msg) {
+  const el = document.getElementById('auth-alert');
+  if (!msg) { el.classList.add('hidden'); return; }
+  document.getElementById('auth-alert-msg').textContent = msg;
+  el.classList.remove('hidden');
 }
 
 function handleLogout() {
-  currentToken = null;
-  currentUser = null;
+  currentToken = null; currentUser = null;
   localStorage.removeItem('token');
   document.getElementById('auth-overlay').classList.remove('hidden');
   document.getElementById('app-container').classList.add('hidden');
-  // Clean inputs
   document.getElementById('login-email').value = '';
   document.getElementById('login-password').value = '';
 }
 
-// ── Tab View Switcher ───────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════
+//  TAB NAVIGATION
+// ═══════════════════════════════════════════════
 function showTab(tabId) {
-  document.querySelectorAll('.nav-link').forEach(btn => btn.classList.remove('active'));
-  document.querySelectorAll('.tab-view').forEach(view => view.classList.remove('active'));
+  document.querySelectorAll('.nav-link').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-view').forEach(v => v.classList.remove('active'));
 
-  const navBtn = document.getElementById(`nav-${tabId}`);
-  const viewPanel = document.getElementById(`tab-${tabId}`);
-  if (navBtn) navBtn.classList.add('active');
-  if (viewPanel) viewPanel.classList.add('active');
+  const navBtn  = document.getElementById(`nav-${tabId}`);
+  const tabView = document.getElementById(`tab-${tabId}`);
+  if (navBtn)  navBtn.classList.add('active');
+  if (tabView) tabView.classList.add('active');
 
-  // Trigger loads on specific tab activations
-  if (tabId === 'history') {
-    loadHistory(1);
-  } else if (tabId === 'keys') {
-    loadAPIKeys();
-  } else if (tabId === 'admin') {
-    loadAdminDashboard();
-  }
+  if (tabId === 'history') loadHistory(1);
+  else if (tabId === 'keys')  loadAPIKeys();
+  else if (tabId === 'admin') loadAdminDashboard();
 }
 
-// ── Playground - Inference Execution ────────────────────────────────────────
+// ═══════════════════════════════════════════════
+//  PLAYGROUND
+// ═══════════════════════════════════════════════
 async function handleInference(e) {
   e.preventDefault();
-  const text = document.getElementById('inference-text').value;
+  const text         = document.getElementById('inference-text').value;
   const modelVersion = document.getElementById('inference-version').value;
   const returnScores = document.getElementById('inference-scores').checked;
+  const btnText      = document.getElementById('inference-btn-text');
+  const spinner      = document.getElementById('inference-spinner');
+  const btn          = document.getElementById('inference-submit-btn');
 
-  const btnText = document.getElementById('inference-btn-text');
-  const spinner = document.getElementById('inference-spinner');
-  const submitBtn = document.getElementById('inference-submit-btn');
-
-  // Disable button, show loading
-  submitBtn.disabled = true;
-  btnText.textContent = 'Processing...';
+  btn.disabled = true;
+  btnText.textContent = 'Processing…';
   spinner.classList.remove('hidden');
 
   try {
-    const start = Date.now();
-    const response = await fetch(`${API_URL}/api/v1/predict`, {
+    const res  = await fetch(`${API_URL}/api/v1/predict`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${currentToken}`
-      },
-      body: JSON.stringify({
-        text,
-        modelVersion,
-        options: { returnScores }
-      })
+      headers: { ...authHeader(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, modelVersion, options: { returnScores } })
     });
-
-    const result = await response.json();
-    if (result.success) {
-      renderPredictionResult(result.data);
-    } else {
-      showToast(result.error.message || 'Inference execution failed', 'error');
-    }
-  } catch (err) {
-    showToast('Failed to connect to serving gateway', 'error');
-  } finally {
-    submitBtn.disabled = false;
-    btnText.textContent = 'Execute Inference';
+    const data = await res.json();
+    if (data.success) renderPredictionResult(data.data);
+    else showToast(data.error.message || 'Inference failed', 'error');
+  } catch { showToast('Could not reach the gateway', 'error'); }
+  finally {
+    btn.disabled = false;
+    btnText.textContent = 'Run Inference';
     spinner.classList.add('hidden');
   }
 }
@@ -243,383 +199,306 @@ function renderPredictionResult(data) {
   display.classList.remove('hidden');
 
   const { prediction, model, performance } = data;
-  
-  // Set labels and latency
-  const labelSpan = document.getElementById('result-sentiment-label');
-  labelSpan.textContent = prediction.label;
+
+  document.getElementById('result-sentiment-label').textContent = prediction.label;
   document.getElementById('result-confidence').textContent = `${(prediction.confidence * 100).toFixed(1)}%`;
-  document.getElementById('result-latency').textContent = `${performance.latencyMs} ms`;
+  document.getElementById('result-latency').textContent     = `${performance.latencyMs} ms`;
   document.getElementById('result-model-version').textContent = model.version;
 
-  // Set colors based on label
   const sBox = document.getElementById('result-sentiment-box');
-  sBox.className = 'sentiment-box'; // reset
+  sBox.className = 'sentiment-box';
   if (prediction.label === 'POSITIVE') sBox.classList.add('pos-style');
   else if (prediction.label === 'NEGATIVE') sBox.classList.add('neg-style');
   else sBox.classList.add('neut-style');
 
-  // Render score bars
-  const scores = prediction.scores || {
-    [prediction.label]: prediction.confidence,
-    // fill mock/others if scores not returned
-  };
-  
-  // Populate fills
-  const posScore = scores.POSITIVE || 0;
-  const negScore = scores.NEGATIVE || 0;
-  const neutScore = scores.NEUTRAL || 0;
+  const scores = prediction.scores || {};
+  const pos = scores.POSITIVE || 0;
+  const neg = scores.NEGATIVE || 0;
+  const neu = scores.NEUTRAL  || 0;
 
-  document.getElementById('bar-pos-val').textContent = `${(posScore * 100).toFixed(1)}%`;
-  document.getElementById('bar-pos-fill').style.width = `${posScore * 100}%`;
-  
-  document.getElementById('bar-neg-val').textContent = `${(negScore * 100).toFixed(1)}%`;
-  document.getElementById('bar-neg-fill').style.width = `${negScore * 100}%`;
+  setBar('pos', pos);
+  setBar('neg', neg);
+  setBar('neut', neu);
 
-  document.getElementById('bar-neut-val').textContent = `${(neutScore * 100).toFixed(1)}%`;
-  document.getElementById('bar-neut-fill').style.width = `${neutScore * 100}%`;
-
-  // Set code block
   document.getElementById('result-json-block').textContent = JSON.stringify({ success: true, data }, null, 2);
 }
 
-function copyRawResult() {
-  const code = document.getElementById('result-json-block').textContent;
-  navigator.clipboard.writeText(code);
-  showToast('Response JSON copied to clipboard', 'info');
+function setBar(key, val) {
+  document.getElementById(`bar-${key}-val`).textContent  = `${(val * 100).toFixed(1)}%`;
+  document.getElementById(`bar-${key}-fill`).style.width = `${val * 100}%`;
 }
 
-// ── API Key Management ──────────────────────────────────────────────────────
+function copyRawResult() {
+  navigator.clipboard.writeText(document.getElementById('result-json-block').textContent);
+  showToast('JSON copied to clipboard', 'info');
+}
+
+// ═══════════════════════════════════════════════
+//  API KEYS
+// ═══════════════════════════════════════════════
 async function loadAPIKeys() {
-  const tableBody = document.getElementById('keys-table-body');
-  tableBody.innerHTML = '<tr><td colspan="6" class="table-loading">Syncing API credentials...</td></tr>';
-
-  // Force load profile to fetch active keys from database
+  const tbody = document.getElementById('keys-table-body');
+  tbody.innerHTML = '<tr><td colspan="6" class="table-empty">Fetching credentials…</td></tr>';
   await loadUserProfile();
-
   if (!currentUser) return;
-  
-  tableBody.innerHTML = '';
+
+  tbody.innerHTML = '';
   if (!currentUser.apiKeyPrefix) {
-    tableBody.innerHTML = '<tr><td colspan="6" class="table-loading">No active API keys found. Click "Generate API Key" to create one.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="table-empty">No active keys — click "New API Key" to create one.</td></tr>';
     return;
   }
 
-  // Display the active key prefix
-  const dateStr = currentUser.updatedAt ? new Date(currentUser.updatedAt).toLocaleString() : 'N/A';
-  const rowHtml = `
+  const lastLogin = currentUser.lastLogin ? new Date(currentUser.lastLogin).toLocaleDateString() : 'Active now';
+  const createdAt = currentUser.updatedAt  ? new Date(currentUser.updatedAt).toLocaleString()    : '—';
+  tbody.innerHTML = `
     <tr>
-      <td><code class="badge-model">${currentUser.apiKeyPrefix}••••</code></td>
+      <td><span class="badge badge-mono">${currentUser.apiKeyPrefix}••••</span></td>
       <td>${currentUser.name}</td>
-      <td><span class="user-role badge-admin">${currentUser.role}</span></td>
-      <td><span class="badge-status success">Active</span></td>
-      <td>${currentUser.lastLogin ? new Date(currentUser.lastLogin).toLocaleDateString() : 'Active now'}</td>
-      <td>${dateStr}</td>
-    </tr>
-  `;
-  tableBody.innerHTML = rowHtml;
+      <td><span class="badge ${currentUser.role === 'admin' ? 'badge-lime' : 'badge-mono'}">${currentUser.role}</span></td>
+      <td><span class="badge badge-ok">● Active</span></td>
+      <td>${lastLogin}</td>
+      <td style="font-family:var(--f-mono);font-size:11px;color:var(--t-mid);">${createdAt}</td>
+    </tr>`;
 }
 
 async function handleGenerateKey() {
-  const modal = document.getElementById('new-key-modal');
-  const rawSpan = document.getElementById('new-key-raw');
-  modal.classList.add('hidden');
-
   try {
-    const response = await fetch(`${API_URL}/api/v1/auth/api-key`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${currentToken}` }
-    });
-    
-    const result = await response.json();
-    if (result.success) {
-      rawSpan.textContent = result.data.apiKey;
-      modal.classList.remove('hidden');
+    const res  = await fetch(`${API_URL}/api/v1/auth/api-key`, { method: 'POST', headers: authHeader() });
+    const data = await res.json();
+    if (data.success) {
+      document.getElementById('new-key-raw').textContent = data.data.apiKey;
+      document.getElementById('new-key-modal').classList.remove('hidden');
       loadAPIKeys();
       showToast('New API key generated', 'success');
-    } else {
-      showToast(result.error.message || 'Key generation failed', 'error');
-    }
-  } catch (err) {
-    showToast('Failed to connect to auth server', 'error');
-  }
+    } else { showToast(data.error.message || 'Key generation failed', 'error'); }
+  } catch { showToast('Failed to reach auth service', 'error'); }
 }
 
 function copyNewKey() {
-  const key = document.getElementById('new-key-raw').textContent;
-  navigator.clipboard.writeText(key);
-  showToast('API Key copied! Store it somewhere safe.', 'success');
+  navigator.clipboard.writeText(document.getElementById('new-key-raw').textContent);
+  showToast('API key copied — store it safely', 'success');
 }
 
-// ── Inference History Logs ──────────────────────────────────────────────────
+// ═══════════════════════════════════════════════
+//  HISTORY LOG
+// ═══════════════════════════════════════════════
 async function loadHistory(page = 1) {
   historyPage = page;
-  const tableBody = document.getElementById('history-table-body');
-  tableBody.innerHTML = '<tr><td colspan="8" class="table-loading">Fetching historical prediction runs...</td></tr>';
+  const tbody = document.getElementById('history-table-body');
+  tbody.innerHTML = '<tr><td colspan="8" class="table-empty">Loading log…</td></tr>';
 
-  const filterModel = document.getElementById('history-filter-model').value;
-  const filterStatus = document.getElementById('history-filter-status').value;
-
-  let queryUrl = `${API_URL}/api/v1/predict/history?page=${historyPage}&limit=${historyLimit}`;
-  if (filterModel) queryUrl += `&modelVersion=${filterModel}`;
-  if (filterStatus) queryUrl += `&status=${filterStatus}`;
+  const mv  = document.getElementById('history-filter-model').value;
+  const st  = document.getElementById('history-filter-status').value;
+  let url   = `${API_URL}/api/v1/predict/history?page=${historyPage}&limit=${HISTORY_LIMIT}`;
+  if (mv) url += `&modelVersion=${mv}`;
+  if (st) url += `&status=${st}`;
 
   try {
-    const response = await fetch(queryUrl, {
-      headers: { 'Authorization': `Bearer ${currentToken}` }
-    });
-
-    const result = await response.json();
-    if (result.success) {
-      renderHistoryTable(result.data.predictions, result.meta.pagination);
-    } else {
-      tableBody.innerHTML = `<tr><td colspan="8" class="table-loading error-alert">${result.error.message || 'Failed to load log history'}</td></tr>`;
-    }
-  } catch (err) {
-    tableBody.innerHTML = '<tr><td colspan="8" class="table-loading error-alert">Failed to establish server connection.</td></tr>';
+    const res  = await fetch(url, { headers: authHeader() });
+    const data = await res.json();
+    if (data.success) renderHistoryTable(data.data.predictions, data.meta.pagination);
+    else tbody.innerHTML = `<tr><td colspan="8" class="table-empty">${data.error.message}</td></tr>`;
+  } catch {
+    tbody.innerHTML = '<tr><td colspan="8" class="table-empty">Connection error.</td></tr>';
   }
 }
 
-function renderHistoryTable(predictions, pagination) {
-  const tableBody = document.getElementById('history-table-body');
-  tableBody.innerHTML = '';
+function renderHistoryTable(rows, pg) {
+  const tbody = document.getElementById('history-table-body');
+  tbody.innerHTML = '';
 
-  if (predictions.length === 0) {
-    tableBody.innerHTML = '<tr><td colspan="8" class="table-loading">No inference runs match selected filters.</td></tr>';
-    document.getElementById('pagination-info').textContent = 'Showing page 0 of 0';
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="table-empty">No results match the current filters.</td></tr>';
+    document.getElementById('pagination-info').textContent = '—';
     document.getElementById('pagination-prev').disabled = true;
     document.getElementById('pagination-next').disabled = true;
     return;
   }
 
-  predictions.forEach((p) => {
-    const rawText = p.input?.text || '';
-    const cleanText = rawText.length > 42 ? rawText.substring(0, 42) + '...' : rawText;
-    const timeStr = new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    const dateStr = new Date(p.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' });
-    
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td><button class="copy-cell-btn font-mono" title="Copy Request ID" onclick="navigator.clipboard.writeText('${p.requestId}'); showToast('Request ID copied', 'info');">${p.requestId.substring(0, 8)}...</button></td>
-      <td class="font-outfit text-secondary" title="${rawText.replace(/"/g, '&quot;')}">${cleanText}</td>
-      <td><span class="badge-model">${p.modelVersion}</span></td>
-      <td><span class="font-outfit font-bold">${p.output?.label || 'N/A'}</span></td>
-      <td>${p.output?.confidence ? `${(p.output.confidence * 100).toFixed(1)}%` : 'N/A'}</td>
-      <td>${p.latencyMs} ms</td>
-      <td><span class="badge-status ${p.status}">${p.status}</span></td>
-      <td class="text-secondary font-outfit" title="${dateStr}">${timeStr}</td>
-    `;
-    tableBody.appendChild(row);
+  rows.forEach(p => {
+    const txt  = (p.input?.text || '').substring(0, 44) + (p.input?.text?.length > 44 ? '…' : '');
+    const time = new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const statusCls = { success: 'badge-ok', error: 'badge-bad', timeout: 'badge-warn' }[p.status] || 'badge-mono';
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>
+        <button class="icon-btn" style="font-family:var(--f-mono);font-size:11px;"
+          title="Copy full ID" onclick="navigator.clipboard.writeText('${p.requestId}');showToast('ID copied','info');">
+          ${p.requestId.substring(0, 8)}…
+        </button>
+      </td>
+      <td style="color:var(--t-mid);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(p.input?.text || '').replace(/"/g,'&quot;')}">${txt || '—'}</td>
+      <td><span class="badge badge-mono">${p.modelVersion}</span></td>
+      <td style="font-weight:600;">${p.output?.label || '—'}</td>
+      <td style="font-family:var(--f-mono);">${p.output?.confidence ? (p.output.confidence * 100).toFixed(1) + '%' : '—'}</td>
+      <td style="font-family:var(--f-mono);">${p.latencyMs} ms</td>
+      <td><span class="badge ${statusCls}">${p.status}</span></td>
+      <td style="font-family:var(--f-mono);font-size:11px;color:var(--t-mid);">${time}</td>`;
+    tbody.appendChild(tr);
   });
 
-  // Handle pagination info
-  document.getElementById('pagination-info').textContent = `Showing page ${pagination.page} of ${pagination.pages} (${pagination.total} total logs)`;
-  document.getElementById('pagination-prev').disabled = pagination.page <= 1;
-  document.getElementById('pagination-next').disabled = pagination.page >= pagination.pages;
+  document.getElementById('pagination-info').textContent =
+    `Page ${pg.page} of ${pg.pages} — ${pg.total} total`;
+  document.getElementById('pagination-prev').disabled = pg.page <= 1;
+  document.getElementById('pagination-next').disabled = pg.page >= pg.pages;
 }
 
-function changeHistoryPage(dir) {
-  loadHistory(historyPage + dir);
-}
+function changeHistoryPage(dir) { loadHistory(historyPage + dir); }
 
-// ── Admin Panel & Operations Dashboard ──────────────────────────────────────
+// ═══════════════════════════════════════════════
+//  ADMIN DASHBOARD
+// ═══════════════════════════════════════════════
 async function loadAdminDashboard() {
   try {
-    // 1. Load model metadata & weights
-    const metadataRes = await fetch(`${API_URL}/api/v1/admin/models`, {
-      headers: { 'Authorization': `Bearer ${currentToken}` }
-    });
-    const metadataResult = await metadataRes.json();
-    
-    // 2. Load 24h operational analytics
-    const analyticsRes = await fetch(`${API_URL}/api/v1/admin/analytics?hours=24`, {
-      headers: { 'Authorization': `Bearer ${currentToken}` }
-    });
-    const analyticsResult = await analyticsRes.json();
+    const [mRes, aRes] = await Promise.all([
+      fetch(`${API_URL}/api/v1/admin/models`,        { headers: authHeader() }),
+      fetch(`${API_URL}/api/v1/admin/analytics?hours=24`, { headers: authHeader() }),
+    ]);
+    const [mData, aData] = await Promise.all([mRes.json(), aRes.json()]);
 
-    if (metadataResult.success && analyticsResult.success) {
-      renderAdminMetadata(metadataResult.data.models);
-      renderAdminAnalytics(analyticsResult.data);
+    if (mData.success && aData.success) {
+      renderAdminMetadata(mData.data.models);
+      renderAdminAnalytics(aData.data);
     } else {
-      showToast('Access denied or analytics service offline', 'error');
+      showToast('Admin data unavailable — check your permissions', 'error');
     }
-  } catch (err) {
-    showToast('Failed to connect to administration routes', 'error');
-  }
+  } catch { showToast('Failed to reach admin endpoints', 'error'); }
 }
 
 function renderAdminMetadata(models) {
   const list = document.getElementById('model-metadata-list');
   list.innerHTML = '';
 
-  models.forEach((m) => {
-    // Determine active weight to populate weights
-    const weightPct = Math.round(m.trafficWeight * 100);
-    
-    // Update live configs of slider if we match v1
+  models.forEach(m => {
+    const pct = Math.round(m.trafficWeight * 100);
     if (m.version === 'v1') {
-      document.getElementById('traffic-slider').value = weightPct;
-      document.getElementById('split-v1-label').textContent = `${weightPct}%`;
-      document.getElementById('split-v2-label').textContent = `${100 - weightPct}%`;
+      const sl = document.getElementById('traffic-slider');
+      sl.value = pct;
+      updateSliderFill(sl);
+      document.getElementById('split-v1-label').textContent = `${pct}%`;
+      document.getElementById('split-v2-label').textContent = `${100 - pct}%`;
     }
 
-    const item = document.createElement('div');
-    item.className = 'meta-item-row';
-    item.innerHTML = `
-      <div class="meta-item-left">
-        <span class="meta-item-title font-outfit text-gradient">${m.version.toUpperCase()} — ${m.modelType.toUpperCase()}</span>
-        <span class="meta-item-desc text-secondary">${m.description}</span>
+    const div = document.createElement('div');
+    div.className = 'model-meta-item';
+    div.innerHTML = `
+      <div class="model-meta-left">
+        <span class="model-version-tag">${m.version.toUpperCase()} · ${m.modelType}</span>
+        <span class="model-desc">${m.description}</span>
       </div>
-      <div class="meta-item-right">
-        <div class="stat-group">
-          <span class="stat-val text-violet">${weightPct}%</span>
-          <span class="stat-lbl">Split Ratio</span>
+      <div class="model-stats">
+        <div class="stat-item">
+          <span class="stat-v lime">${pct}%</span>
+          <span class="stat-l">Traffic</span>
         </div>
-        <div class="stat-group">
-          <span class="stat-val font-mono">${m.totalPredictions}</span>
-          <span class="stat-lbl">Runs</span>
+        <div class="stat-item">
+          <span class="stat-v">${m.totalPredictions}</span>
+          <span class="stat-l">Runs</span>
         </div>
-        <div class="stat-group">
-          <span class="stat-val font-mono">${Math.round(m.avgLatencyMs)}ms</span>
-          <span class="stat-lbl">Avg Delay</span>
+        <div class="stat-item">
+          <span class="stat-v">${Math.round(m.avgLatencyMs)}ms</span>
+          <span class="stat-l">Avg</span>
         </div>
-      </div>
-    `;
-    list.appendChild(item);
+      </div>`;
+    list.appendChild(div);
   });
 }
 
 function updateSliderLabels(val) {
   document.getElementById('split-v1-label').textContent = `${val}%`;
   document.getElementById('split-v2-label').textContent = `${100 - val}%`;
+  const sl = document.getElementById('traffic-slider');
+  updateSliderFill(sl);
 }
 
 async function saveTrafficWeights(val) {
   const weight = parseFloat((val / 100).toFixed(4));
   try {
-    const response = await fetch(`${API_URL}/api/v1/admin/models/weights`, {
+    const res  = await fetch(`${API_URL}/api/v1/admin/models/weights`, {
       method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${currentToken}`
-      },
+      headers: { ...authHeader(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ version: 'v1', weight })
     });
-    
-    const result = await response.json();
-    if (result.success) {
-      showToast('A/B traffic weights updated live', 'success');
-      loadAdminDashboard(); // reload descriptions
-    } else {
-      showToast(result.error.message || 'Failed to update traffic weights', 'error');
-    }
-  } catch (err) {
-    showToast('Network error updating weights', 'error');
-  }
+    const data = await res.json();
+    if (data.success) { showToast('Traffic weights updated', 'success'); loadAdminDashboard(); }
+    else showToast(data.error.message || 'Update failed', 'error');
+  } catch { showToast('Network error', 'error'); }
 }
 
 function renderAdminAnalytics(data) {
-  // Update metric text blocks
-  document.getElementById('admin-metric-total').textContent = data.summary.totalPredictions;
+  document.getElementById('admin-metric-total').textContent   = data.summary.totalPredictions;
   document.getElementById('admin-metric-success').textContent = data.summary.successRate;
-  document.getElementById('admin-metric-latency').textContent = data.latency ? `${data.latency.avgMs} ms` : 'N/A';
-  
-  const errCount = data.summary.errorCount + data.summary.timeoutCount;
-  document.getElementById('admin-metric-errors').textContent = errCount;
+  document.getElementById('admin-metric-latency').textContent = data.latency ? `${data.latency.avgMs} ms` : '—';
+  document.getElementById('admin-metric-errors').textContent  = (data.summary.errorCount || 0) + (data.summary.timeoutCount || 0);
 
-  // Setup analytics chart
   const ctx = document.getElementById('latencyChart').getContext('2d');
-  
-  if (analyticsChart) {
-    analyticsChart.destroy();
-  }
+  if (analyticsChart) { analyticsChart.destroy(); analyticsChart = null; }
 
-  // Generate dataset lists
-  const labels = data.byModel.map(m => m.version.toUpperCase());
+  const labels     = data.byModel.map(m => m.version.toUpperCase());
   const predictions = data.byModel.map(m => m.predictions);
-  const latencies = data.byModel.map(m => m.avgLatencyMs);
+  const latencies  = data.byModel.map(m => m.avgLatencyMs);
+
+  // Chart.js defaults override for dark theme
+  Chart.defaults.color = '#555';
+  Chart.defaults.borderColor = 'rgba(255,255,255,0.04)';
 
   analyticsChart = new Chart(ctx, {
     type: 'bar',
     data: {
-      labels: labels,
+      labels,
       datasets: [
         {
-          label: 'Prediction Counts',
+          label: 'Predictions',
           data: predictions,
-          backgroundColor: 'rgba(139, 92, 246, 0.4)',
-          borderColor: '#8b5cf6',
-          borderWidth: 2,
-          yAxisID: 'y'
+          backgroundColor: 'rgba(184,255,60,0.15)',
+          borderColor: '#B8FF3C',
+          borderWidth: 1.5,
+          borderRadius: 4,
+          yAxisID: 'y',
         },
         {
           label: 'Avg Latency (ms)',
           data: latencies,
-          backgroundColor: 'rgba(6, 182, 212, 0.4)',
-          borderColor: '#06b6d4',
-          borderWidth: 2,
-          yAxisID: 'y1'
-        }
-      ]
+          backgroundColor: 'rgba(61,235,138,0.1)',
+          borderColor: '#3DEB8A',
+          borderWidth: 1.5,
+          borderRadius: 4,
+          yAxisID: 'y1',
+        },
+      ],
     },
     options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: {
-        x: {
-          grid: { color: 'rgba(255, 255, 255, 0.05)' },
-          ticks: { color: '#9ca3af' }
-        },
-        y: {
-          type: 'linear',
-          display: true,
-          position: 'left',
-          grid: { color: 'rgba(255, 255, 255, 0.05)' },
-          ticks: { color: '#9ca3af' },
-          title: { display: true, text: 'Total Runs', color: '#9ca3af' }
-        },
-        y1: {
-          type: 'linear',
-          display: true,
-          position: 'right',
-          grid: { drawOnChartArea: false },
-          ticks: { color: '#9ca3af' },
-          title: { display: true, text: 'Latency (ms)', color: '#9ca3af' }
-        }
-      },
+      responsive: true, maintainAspectRatio: false,
       plugins: {
-        legend: { labels: { color: '#f3f4f6' } }
-      }
-    }
+        legend: { labels: { color: '#888', font: { family: 'JetBrains Mono', size: 11 }, boxWidth: 12, padding: 16 } },
+      },
+      scales: {
+        x:  { grid: { display: false }, ticks: { color: '#555', font: { family: 'JetBrains Mono', size: 11 } } },
+        y:  { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#555', font: { family: 'JetBrains Mono', size: 11 } },
+               title: { display: true, text: 'Requests', color: '#555', font: { size: 10 } }, position: 'left' },
+        y1: { grid: { drawOnChartArea: false }, ticks: { color: '#555', font: { family: 'JetBrains Mono', size: 11 } },
+               title: { display: true, text: 'Latency ms', color: '#555', font: { size: 10 } }, position: 'right' },
+      },
+    },
   });
 }
 
-// ── Toast Notification Manager ──────────────────────────────────────────────
-function showToast(message, type = 'info') {
-  const container = document.getElementById('toast-container');
+// ═══════════════════════════════════════════════
+//  TOASTS
+// ═══════════════════════════════════════════════
+function showToast(msg, type = 'info') {
+  const icons = { success: 'fa-circle-check', error: 'fa-circle-exclamation', info: 'fa-circle-info' };
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
-  
-  let icon = 'fa-solid fa-circle-info';
-  if (type === 'success') icon = 'fa-solid fa-circle-check';
-  else if (type === 'error') icon = 'fa-solid fa-circle-exclamation';
-
-  toast.innerHTML = `
-    <i class="${icon}"></i>
-    <span>${message}</span>
-  `;
-
-  container.appendChild(toast);
-
-  // Animate slide-out and remove
+  toast.innerHTML = `<i class="fa-solid ${icons[type] || icons.info}"></i><span>${msg}</span>`;
+  document.getElementById('toast-container').appendChild(toast);
   setTimeout(() => {
     toast.classList.add('fade-out');
-    toast.addEventListener('animationend', () => {
-      toast.remove();
-    });
-  }, 4000);
+    toast.addEventListener('animationend', () => toast.remove(), { once: true });
+  }, 3800);
 }
 
-// ── Event Listeners Setup ───────────────────────────────────────────────────
 function setupEventListeners() {
   // Auth tab buttons
   document.getElementById('tab-login-btn')?.addEventListener('click', () => switchAuthTab('login'));
@@ -639,16 +518,14 @@ function setupEventListeners() {
   document.querySelector('.logout-btn')?.addEventListener('click', handleLogout);
 
   // Playground form submission
-  const playgroundForm = document.querySelector('#tab-playground form');
-  playgroundForm?.addEventListener('submit', handleInference);
+  document.getElementById('playground-inference-form')?.addEventListener('submit', handleInference);
 
   // Copy buttons
-  document.querySelector('.copy-json-btn')?.addEventListener('click', copyRawResult);
-  document.querySelector('.copy-raw-btn')?.addEventListener('click', copyNewKey);
+  document.getElementById('copy-json-btn')?.addEventListener('click', copyRawResult);
+  document.getElementById('copy-new-key-btn')?.addEventListener('click', copyNewKey);
   
   // API key gen button in keys tab
-  const genKeyBtn = document.querySelector('#tab-keys .view-header button');
-  genKeyBtn?.addEventListener('click', handleGenerateKey);
+  document.getElementById('gen-key-btn')?.addEventListener('click', handleGenerateKey);
 
   // History filters
   document.getElementById('history-filter-model')?.addEventListener('change', () => loadHistory(1));
@@ -659,16 +536,18 @@ function setupEventListeners() {
   document.getElementById('pagination-next')?.addEventListener('click', () => changeHistoryPage(1));
 
   // Admin slider
-  const slider = document.getElementById('traffic-slider');
-  if (slider) {
-    slider.addEventListener('input', (e) => updateSliderLabels(e.target.value));
-    slider.addEventListener('change', (e) => saveTrafficWeights(e.target.value));
+  const sl = document.getElementById('traffic-slider');
+  if (sl) {
+    sl.addEventListener('input', e => updateSliderLabels(e.target.value));
+    sl.addEventListener('change', e => saveTrafficWeights(e.target.value));
+    updateSliderFill(sl);
   }
 }
 
-// Start application
+// ═══════════════════════════════════════════════
+//  BOOT
+// ═══════════════════════════════════════════════
 window.onload = () => {
   setupEventListeners();
   initApp();
 };
-
