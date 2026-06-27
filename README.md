@@ -1,217 +1,65 @@
-# ML Model Serving API
+# ModelSentry
 
-A production-grade REST API for serving machine learning models with full observability, security, and A/B traffic routing. Built with **Node.js + Express + MongoDB**.
-
-## Features
-
-| Category | What's included |
-|---|---|
-| **Security** | Helmet (CSP, HSTS), CORS allowlist, JWT auth, API key auth (bcrypt-hashed), rate limiting (global + per-route), input validation with Zod |
-| **ML Serving** | Single inference, batch inference (50 items), model versioning (v1/v2), weighted A/B routing, configurable timeout |
-| **Observability** | Prometheus metrics endpoint (`/health/metrics`), Winston structured JSON logging (file rotation), request IDs on every response |
-| **MongoDB** | Connection pooling, retry on connect, TTL index on prediction logs (90-day auto-delete), compound indexes for analytics queries |
-| **Production** | Graceful SIGTERM/SIGINT shutdown, unhandledRejection + uncaughtException handlers, env-based config validation, standardized error shapes |
-| **Testing** | Jest + Supertest integration tests, 25+ test cases covering auth, prediction, validation, and health endpoints |
+ModelSentry is a production-grade, secure Machine Learning serving gateway and analytics wrapper built on **Node.js, Express, and MongoDB**. It intercepts and serves model inference requests with A/B traffic split controls, observability metrics, and API key management inside an embedded dark-theme developer portal.
 
 ---
 
-## Quick Start
+## 🛠️ Tech Stack
 
+![NodeJS](https://img.shields.io/badge/Node.js-339933?style=flat-square&logo=nodedotjs&logoColor=white)
+![Express](https://img.shields.io/badge/Express-000000?style=flat-square&logo=express&logoColor=white)
+![MongoDB](https://img.shields.io/badge/MongoDB-47A248?style=flat-square&logo=mongodb&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)
+![Prometheus](https://img.shields.io/badge/Prometheus-E6522C?style=flat-square&logo=prometheus&logoColor=white)
+![Jest](https://img.shields.io/badge/Jest-C21325?style=flat-square&logo=jest&logoColor=white)
+
+---
+
+## ✨ Key Features
+
+- **Real Sentiment Predictions**: Deep learning sentiment classification powered by Hugging Face pipeline endpoints (BERT & RoBERTa models).
+- **A/B Traffic Split Controls**: Drag-and-drop weight controllers to dynamically balance requests between Stable (`v1`) and Canary (`v2`) models.
+- **Embedded Developer Console**: Single-page dark dashboard to test inferences in the Playground, manage developer API keys, and audit prediction history logs.
+- **Production Observability**: Winston JSON logs (with automated rotation) and raw Prometheus metrics (`/health/metrics`) for CPU, latency histograms, and HTTP request tracking.
+- **Robust Security Gates**: Programmatic API key validation, JWT tokens, global and endpoint rate limiters, Helmet header controls (strict CSP), and input constraints (via Zod).
+
+---
+
+## 🚀 Quick Start
+
+### Local Setup
+
+1. **Clone & Install Dependencies**
+   ```bash
+   git clone https://github.com/LEVELING2108/Modelsentry-api.git
+   cd Modelsentry-api
+   npm install
+   ```
+
+2. **Configure Environment**
+   Create a `.env` file from the template:
+   ```bash
+   cp .env.example .env
+   ```
+
+3. **Start Development Server**
+   ```bash
+   npm run dev
+   ```
+   *Your server will boot at `http://localhost:3000`.*
+
+### Docker Deployment
+
+To build and run the complete application stack (Node.js API + MongoDB):
 ```bash
-# 1. Clone and install
-git clone https://github.com/LEVELING2108/ml-serving-api
-cd ml-serving-api
-npm install
+docker-compose up --build
+```
 
-# 2. Configure environment
-cp .env.example .env
-# Edit .env with your MongoDB URI and JWT secret
+---
 
-# 3. Run in development mode
-npm run dev
+## 🧪 Running Tests
 
-# 4. Run tests
+Verify health checks, predictions, and auth pipelines by running the Jest test suite:
+```bash
 npm test
 ```
-
----
-
-## API Reference
-
-### Authentication
-
-All prediction endpoints require authentication via:
-- `Authorization: Bearer <jwt_token>` — for users
-- `X-API-Key: <key>` — for programmatic access
-
-#### Register
-```
-POST /api/v1/auth/register
-{
-  "name": "Sourav Kumar",
-  "email": "sourav@example.com",
-  "password": "SecurePass1"
-}
-```
-
-#### Login
-```
-POST /api/v1/auth/login
-{ "email": "...", "password": "..." }
-→ returns { token, user }
-```
-
-#### Generate API Key
-```
-POST /api/v1/auth/api-key
-Authorization: Bearer <token>
-→ returns { apiKey: "sk-...", prefix: "sk-ab12" }
-⚠️  Store this key securely — it will not be shown again.
-```
-
----
-
-### Predictions
-
-#### Single Prediction
-```
-POST /api/v1/predict
-Authorization: Bearer <token>
-{
-  "text": "This product is absolutely amazing!",
-  "modelVersion": "auto",         // "v1" | "v2" | "auto" (A/B routing)
-  "options": {
-    "returnScores": true,          // Include per-class probability scores
-    "topK": 1
-  }
-}
-
-Response:
-{
-  "success": true,
-  "data": {
-    "requestId": "uuid",
-    "prediction": {
-      "label": "POSITIVE",
-      "confidence": 0.8924,
-      "scores": { "POSITIVE": 0.8924, "NEGATIVE": 0.0612, "NEUTRAL": 0.0464 }
-    },
-    "model": { "version": "v2", "type": "sentiment" },
-    "performance": { "latencyMs": 67 }
-  }
-}
-```
-
-#### Batch Prediction (up to 50 inputs)
-```
-POST /api/v1/predict/batch
-{
-  "inputs": [
-    { "id": "item-1", "text": "Great service!" },
-    { "id": "item-2", "text": "Terrible experience" }
-  ],
-  "modelVersion": "v1"
-}
-```
-
-#### Prediction History
-```
-GET /api/v1/predict/history?page=1&limit=20&modelVersion=v2&status=success
-```
-
----
-
-### Admin (role: admin)
-
-#### Get Model Metadata
-```
-GET /api/v1/admin/models
-```
-
-#### Update A/B Traffic Split
-```
-PATCH /api/v1/admin/models/weights
-{ "version": "v2", "weight": 0.5 }
-// Automatically sets v1 to 0.5 as well
-```
-
-#### Analytics Dashboard
-```
-GET /api/v1/admin/analytics?hours=24
-→ returns totalPredictions, successRate, per-model breakdown, latency stats
-```
-
----
-
-### Health & Monitoring
-
-| Endpoint | Purpose |
-|---|---|
-| `GET /health` | Full health check with DB + memory info |
-| `GET /health/live` | Kubernetes liveness probe |
-| `GET /health/ready` | Kubernetes readiness probe (checks DB) |
-| `GET /health/metrics` | Prometheus metrics scrape endpoint |
-
-#### Prometheus Metrics Exposed
-- `ml_api_http_request_duration_seconds` — request latency histogram (by method, route, status)
-- `ml_api_predictions_total` — prediction count (by model version, status)
-- `ml_api_prediction_duration_seconds` — inference latency histogram
-- `ml_api_auth_failures_total` — auth failure counter (by reason)
-- `ml_api_model_traffic_ratio` — live A/B split gauge
-- Standard Node.js metrics: CPU, memory, event loop lag, GC stats
-
----
-
-## Architecture
-
-```
-Client
-  └── Rate Limiter + Helmet + CORS
-        └── Auth Middleware (JWT or API Key)
-              └── Zod Validation
-                    └── Prediction Router (A/B routing)
-                          ├── Model v1 (stable, 80% traffic)
-                          └── Model v2 (canary, 20% traffic)
-                                └── Response Builder
-                                      ├── MongoDB (prediction log + audit)
-                                      └── Prometheus Metrics
-```
-
----
-
-## Environment Variables
-
-| Variable | Default | Description |
-|---|---|---|
-| `PORT` | 3000 | Server port |
-| `MONGODB_URI` | localhost:27017/ml_serving_db | MongoDB connection string |
-| `JWT_SECRET` | — | **Required in production** |
-| `JWT_EXPIRES_IN` | 7d | Token lifetime |
-| `RATE_LIMIT_MAX_REQUESTS` | 100 | Requests per window |
-| `RATE_LIMIT_WINDOW_MS` | 900000 | Rate limit window (15 min) |
-| `MODEL_V1_WEIGHT` | 0.8 | v1 A/B traffic fraction |
-| `MODEL_V2_WEIGHT` | 0.2 | v2 A/B traffic fraction |
-| `LOG_LEVEL` | info | Winston log level |
-
----
-
-## Running Tests
-```bash
-npm test                  # All tests
-npm run test:coverage     # With coverage report
-```
-
-Tests use a separate `ml_serving_test` database and clean up after each run.
-
----
-
-## Tech Stack
-
-- **Runtime**: Node.js 18+
-- **Framework**: Express 4
-- **Database**: MongoDB via Mongoose
-- **Auth**: JWT (jsonwebtoken) + bcryptjs
-- **Validation**: Zod
-- **Security**: Helmet, CORS, express-rate-limit
-- **Monitoring**: prom-client (Prometheus), Winston
-- **Testing**: Jest + Supertest
