@@ -246,17 +246,20 @@ async function loadAPIKeys() {
 
   tbody.innerHTML = '';
   if (!currentUser.apiKeyPrefix) {
-    tbody.innerHTML = '<tr><td colspan="6" class="table-empty">No active keys — click "New API Key" to create one.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="table-empty">No active keys — configure options above and click "Generate Key".</td></tr>';
     return;
   }
 
   const lastLogin = currentUser.lastLogin ? new Date(currentUser.lastLogin).toLocaleDateString() : 'Active now';
   const createdAt = currentUser.updatedAt  ? new Date(currentUser.updatedAt).toLocaleString()    : '—';
+  const scopesBadges = (currentUser.apiKeyScopes || []).map(s => `<span class="badge badge-mono" style="margin-right: 4px; border: 1px solid var(--ink-border);">${s}</span>`).join('') || '—';
+  const rateLimitVal = `${currentUser.apiKeyRateLimit || 100} req/min`;
+
   tbody.innerHTML = `
     <tr>
       <td><span class="badge badge-mono">${currentUser.apiKeyPrefix}••••</span></td>
-      <td>${currentUser.name}</td>
-      <td><span class="badge ${currentUser.role === 'admin' ? 'badge-lime' : 'badge-mono'}">${currentUser.role}</span></td>
+      <td><div style="display:flex; flex-wrap:wrap; gap:4px;">${scopesBadges}</div></td>
+      <td><span class="badge badge-mono">${rateLimitVal}</span></td>
       <td><span class="badge badge-ok">● Active</span></td>
       <td>${lastLogin}</td>
       <td style="font-family:var(--f-mono);font-size:11px;color:var(--t-mid);">${createdAt}</td>
@@ -265,7 +268,19 @@ async function loadAPIKeys() {
 
 async function handleGenerateKey() {
   try {
-    const res  = await fetch(`${API_URL}/api/v1/auth/api-key`, { method: 'POST', headers: authHeader() });
+    const scopes = [];
+    if (document.getElementById('scope-v1')?.checked) scopes.push('predict:v1');
+    if (document.getElementById('scope-v2')?.checked) scopes.push('predict:v2');
+    if (document.getElementById('scope-batch')?.checked) scopes.push('predict:batch');
+    if (document.getElementById('scope-history')?.checked) scopes.push('history:read');
+
+    const rateLimit = parseInt(document.getElementById('key-rate-limit')?.value, 10) || 100;
+
+    const res  = await fetch(`${API_URL}/api/v1/auth/api-key`, {
+      method: 'POST',
+      headers: { ...authHeader(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scopes, rateLimit })
+    });
     const data = await res.json();
     if (data.success) {
       document.getElementById('new-key-raw').textContent = data.data.apiKey;

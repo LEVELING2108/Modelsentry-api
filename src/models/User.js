@@ -42,6 +42,14 @@ const userSchema = new mongoose.Schema(
     apiKeyPrefix: {
       type: String, // e.g. "sk-abc1" — shown in listings so users identify their key
     },
+    apiKeyScopes: {
+      type: [String],
+      default: ['predict:v1', 'predict:v2', 'predict:batch', 'history:read'],
+    },
+    apiKeyRateLimit: {
+      type: Number,
+      default: 100,
+    },
     isActive: {
       type: Boolean,
       default: true,
