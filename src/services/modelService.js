@@ -158,13 +158,22 @@ const runInference = async (text, requestedVersion, options = {}) => {
     metrics.predictionsTotal.inc({ model_version: modelVersion, model_type: modelType, status: 'success' });
 
     // Update model stats async (fire-and-forget — non-blocking)
-    ModelMetadata.findOneAndUpdate(
-      { version: modelVersion },
-      {
-        $inc: { totalPredictions: 1 },
-        $set: { avgLatencyMs: actualLatency },
-      }
-    ).catch(() => {});
+    ModelMetadata.findOne({ version: modelVersion })
+      .then((meta) => {
+        if (meta) {
+          const currentTotal = meta.totalPredictions || 0;
+          const currentAvg = meta.avgLatencyMs || 0;
+          const newTotal = currentTotal + 1;
+          const newAvg = ((currentAvg * currentTotal) + actualLatency) / newTotal;
+
+          meta.totalPredictions = newTotal;
+          meta.avgLatencyMs = parseFloat(newAvg.toFixed(2));
+          return meta.save();
+        }
+      })
+      .catch((err) => {
+        logger.error('Failed to update model stats', { error: err.message, modelVersion });
+      });
 
     logger.debug('Inference complete', { modelVersion, label, confidence, latencyMs: actualLatency, realModel: usedRealModel });
 

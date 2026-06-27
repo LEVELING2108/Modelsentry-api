@@ -43,17 +43,13 @@ const requestMetrics = (req, res, next) => {
   next();
 };
 
-/**
- * Tracks active WebSocket / keep-alive connections.
- */
 const connectionTracker = (server) => {
-  server.on('connection', () => {
+  server.on('connection', (socket) => {
     metrics.activeConnections.inc();
+    socket.on('close', () => {
+      metrics.activeConnections.dec();
+    });
   });
-
-  // Note: Express 4 doesn't expose 'close' per-connection natively here;
-  // use a proper connection-tracking approach in production with Node's
-  // net.Server tracking via server.on('connection', socket => socket.on('close'...))
 };
 
 module.exports = { requestMetrics, connectionTracker };
