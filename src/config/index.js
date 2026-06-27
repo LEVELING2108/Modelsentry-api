@@ -30,6 +30,10 @@ const config = {
     hfApiKey: process.env.HF_API_KEY || '',
     v1ModelId: process.env.MODEL_V1_ID || 'distilbert-base-uncased-finetuned-sst-2-english',
     v2ModelId: process.env.MODEL_V2_ID || 'cardiffnlp/twitter-roberta-base-sentiment-latest',
+    v1SummarizationId: process.env.MODEL_SUMMARIZATION_V1_ID || 'facebook/bart-large-cnn',
+    v2SummarizationId: process.env.MODEL_SUMMARIZATION_V2_ID || 'google/pegasus-xsum',
+    v1NerId: process.env.MODEL_NER_V1_ID || 'dbmdz/bert-large-cased-finetuned-conll03-english',
+    v2NerId: process.env.MODEL_NER_V2_ID || 'elastic/distilbert-base-uncased-finetuned-conll03-english',
   },
 
   redis: {

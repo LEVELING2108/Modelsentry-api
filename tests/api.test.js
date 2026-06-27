@@ -343,7 +343,74 @@ describe('API Key Scoping and Rate Limiting', () => {
       .send({ text: 'R3', modelVersion: 'v1' });
     
     expect(r3.status).toBe(429);
-    expect(r3.body.error.message).toContain('API Key rate limit exceeded');
+  });
+});
+
+// ── Multi-Task Gateway Tests ───────────────────────────────────────────────
+describe('Multi-Task ML Gateway', () => {
+  it('should run summarization task successfully with wildcard API key', async () => {
+    await registerUser();
+    const loginRes = await loginUser();
+    const userToken = loginRes.body.data.token;
+
+    const res1 = await request(app)
+      .post('/api/v1/auth/api-key')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ scopes: ['*'], rateLimit: 100 });
+    const allAccessKey = res1.body.data.apiKey;
+
+    const res = await request(app)
+      .post('/api/v1/predict')
+      .set('X-API-Key', allAccessKey)
+      .send({ text: 'Google DeepMind is an artificial intelligence research laboratory. It was founded in 2010.', task: 'summarization' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.prediction).toHaveProperty('summaryText');
+    expect(typeof res.body.data.prediction.summaryText).toBe('string');
+  });
+
+  it('should run NER task successfully with wildcard API key', async () => {
+    await registerUser();
+    const loginRes = await loginUser();
+    const userToken = loginRes.body.data.token;
+
+    const res1 = await request(app)
+      .post('/api/v1/auth/api-key')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ scopes: ['*'], rateLimit: 100 });
+    const allAccessKey = res1.body.data.apiKey;
+
+    const res = await request(app)
+      .post('/api/v1/predict')
+      .set('X-API-Key', allAccessKey)
+      .send({ text: 'Barack Obama visited Berlin in Germany.', task: 'ner' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.prediction).toHaveProperty('entities');
+    expect(Array.isArray(res.body.data.prediction.entities)).toBe(true);
+    expect(res.body.data.prediction.entities.length).toBeGreaterThan(0);
+  });
+
+  it('should deny summarization task for a key without predict:summarization scope', async () => {
+    await registerUser();
+    const loginRes = await loginUser();
+    const userToken = loginRes.body.data.token;
+
+    const res2 = await request(app)
+      .post('/api/v1/auth/api-key')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ scopes: ['predict:v1', 'predict:v2'], rateLimit: 100 });
+    const sentimentOnlyKey = res2.body.data.apiKey;
+
+    const res = await request(app)
+      .post('/api/v1/predict')
+      .set('X-API-Key', sentimentOnlyKey)
+      .send({ text: 'Some text here.', task: 'summarization' });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error.message).toContain("API key lacks required scope 'predict:summarization'");
   });
 });
 

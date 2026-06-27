@@ -31,6 +31,7 @@ const predictionSchema = z.object({
     .max(5000, 'Input text cannot exceed 5000 characters')
     .trim(),
   modelVersion: z.enum(['v1', 'v2', 'auto']).default('auto'),
+  task: z.enum(['sentiment', 'summarization', 'ner']).optional().default('sentiment'),
   options: z
     .object({
       returnScores: z.boolean().default(false),
@@ -51,6 +52,7 @@ const batchPredictionSchema = z.object({
     .min(1, 'At least one input required')
     .max(50, 'Batch size cannot exceed 50'),
   modelVersion: z.enum(['v1', 'v2', 'auto']).default('auto'),
+  task: z.enum(['sentiment', 'summarization', 'ner']).optional().default('sentiment'),
 });
 
 // --- Admin schemas ---
