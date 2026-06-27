@@ -10,6 +10,8 @@ services:
       - NODE_ENV=development
       - PORT=3000
       - MONGODB_URI=mongodb://db:27017/ml_serving_db
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
       - JWT_SECRET=development_secret_keys_modelsentry_auth_32_chars_long
       - JWT_EXPIRES_IN=7d
       - RATE_LIMIT_WINDOW_MS=900000
@@ -19,6 +21,7 @@ services:
       - HF_API_KEY=
     depends_on:
       - db
+      - redis
     restart: always
 
   db:
@@ -28,6 +31,13 @@ services:
       - '27017:27017'
     volumes:
       - mongo_data:/data/db
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    container_name: modelsentry-redis
+    ports:
+      - '6379:6379'
     restart: always
 
 volumes:

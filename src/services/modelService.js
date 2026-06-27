@@ -1,7 +1,9 @@
+const crypto = require('crypto');
 const config = require('../config');
 const logger = require('../utils/logger');
 const { metrics } = require('../utils/metrics');
 const ModelMetadata = require('../models/ModelMetadata');
+const redisCache = require('../config/redis');
 
 /**
  * Simulated ML inference — in production this would call a Python FastAPI
@@ -106,12 +108,47 @@ const runInference = async (text, requestedVersion, options = {}) => {
   const modelVersion = requestedVersion === 'auto' ? selectModelVersion() : requestedVersion;
   const modelType = 'sentiment';
 
+  const startMs = Date.now();
+  const textHash = crypto.createHash('md5').update(text).digest('hex');
+  const cacheKey = `inference:sentiment:${modelVersion}:${textHash}:${options.returnScores ? 'scores' : 'simple'}`;
+
+  try {
+    // Try fetching from Redis cache first
+    const cachedResult = await redisCache.get(cacheKey);
+    if (cachedResult) {
+      const actualLatency = Date.now() - startMs;
+      logger.debug('Inference cache hit', { modelVersion, latencyMs: actualLatency });
+
+      // Update model stats async (fire-and-forget — non-blocking)
+      ModelMetadata.findOne({ version: modelVersion })
+        .then((meta) => {
+          if (meta) {
+            const currentTotal = meta.totalPredictions || 0;
+            const currentAvg = meta.avgLatencyMs || 0;
+            const newTotal = currentTotal + 1;
+            const newAvg = ((currentAvg * currentTotal) + actualLatency) / newTotal;
+
+            meta.totalPredictions = newTotal;
+            meta.avgLatencyMs = parseFloat(newAvg.toFixed(2));
+            return meta.save();
+          }
+        })
+        .catch(() => {});
+
+      return {
+        ...cachedResult,
+        cached: true,
+        latencyMs: actualLatency,
+      };
+    }
+  } catch (err) {
+    logger.warn('Failed to read from Redis cache', { error: err.message });
+  }
+
   const endTimer = metrics.predictionDuration.startTimer({
     model_version: modelVersion,
     model_type: modelType,
   });
-
-  const startMs = Date.now();
 
   try {
     let scores;
@@ -158,23 +195,39 @@ const runInference = async (text, requestedVersion, options = {}) => {
     metrics.predictionsTotal.inc({ model_version: modelVersion, model_type: modelType, status: 'success' });
 
     // Update model stats async (fire-and-forget — non-blocking)
-    ModelMetadata.findOneAndUpdate(
-      { version: modelVersion },
-      {
-        $inc: { totalPredictions: 1 },
-        $set: { avgLatencyMs: actualLatency },
-      }
-    ).catch(() => {});
+    ModelMetadata.findOne({ version: modelVersion })
+      .then((meta) => {
+        if (meta) {
+          const currentTotal = meta.totalPredictions || 0;
+          const currentAvg = meta.avgLatencyMs || 0;
+          const newTotal = currentTotal + 1;
+          const newAvg = ((currentAvg * currentTotal) + actualLatency) / newTotal;
+
+          meta.totalPredictions = newTotal;
+          meta.avgLatencyMs = parseFloat(newAvg.toFixed(2));
+          return meta.save();
+        }
+      })
+      .catch((err) => {
+        logger.error('Failed to update model stats', { error: err.message, modelVersion });
+      });
 
     logger.debug('Inference complete', { modelVersion, label, confidence, latencyMs: actualLatency, realModel: usedRealModel });
 
-    return {
+    const resultPayload = {
       label,
       confidence: parseFloat(confidence.toFixed(4)),
       scores: options.returnScores ? Object.fromEntries(
         Object.entries(scores).map(([k, v]) => [k, parseFloat(v.toFixed(4))])
       ) : undefined,
       modelVersion,
+    };
+
+    // Cache the result in Redis async (fire-and-forget)
+    redisCache.set(cacheKey, resultPayload).catch(() => {});
+
+    return {
+      ...resultPayload,
       latencyMs: actualLatency,
     };
   } catch (error) {

@@ -130,6 +130,27 @@ describe('POST /api/v1/predict', () => {
     expect(res.body.data.performance.latencyMs).toBeGreaterThan(0);
   });
 
+  it('should cache predictions and return cached: true for subsequent requests', async () => {
+    const text = 'Redis caching test payload!';
+    const res1 = await request(app)
+      .post('/api/v1/predict')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ text, modelVersion: 'v1' });
+
+    expect(res1.status).toBe(200);
+    expect(res1.body.data.performance.cached).toBeUndefined();
+
+    const res2 = await request(app)
+      .post('/api/v1/predict')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ text, modelVersion: 'v1' });
+
+    expect(res2.status).toBe(200);
+    if (process.env.REDIS_ENABLED !== 'false') {
+      expect(res2.body.data.performance.cached).toBe(true);
+    }
+  });
+
   it('should respect explicit model version', async () => {
     const res = await request(app)
       .post('/api/v1/predict')
