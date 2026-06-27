@@ -58,14 +58,27 @@ const getAnalytics = async (req, res, next) => {
     const hours = Math.min(720, parseInt(req.query.hours, 10) || 24);
     const since = new Date(Date.now() - hours * 60 * 60 * 1000);
 
-    const [totalStats, modelStats, latencyStats, errorStats, sentimentStats, timeSeriesStats] = await Promise.all([
+    const [totalStats, modelStats, latencyStats, errorStats, sentimentStats, timeSeriesStats, modelSentimentStats] = await Promise.all([
       // Total predictions
       Prediction.countDocuments({ createdAt: { $gte: since } }),
 
       // Per-model breakdown
       Prediction.aggregate([
         { $match: { createdAt: { $gte: since } } },
-        { $group: { _id: '$modelVersion', count: { $sum: 1 }, avgLatency: { $avg: '$latencyMs' } } },
+        {
+          $group: {
+            _id: '$modelVersion',
+            count: { $sum: 1 },
+            avgLatency: { $avg: '$latencyMs' },
+            errorCount: {
+              $sum: { $cond: [{ $ne: ['$status', 'success'] }, 1, 0] }
+            },
+            successCount: {
+              $sum: { $cond: [{ $eq: ['$status', 'success'] }, 1, 0] }
+            },
+            avgConfidence: { $avg: '$output.confidence' }
+          }
+        },
       ]),
 
       // Latency percentiles
@@ -110,6 +123,17 @@ const getAnalytics = async (req, res, next) => {
         },
         { $sort: { _id: 1 } }
       ]),
+
+      // Sentiment breakdown per model (A/B comparisons)
+      Prediction.aggregate([
+        { $match: { createdAt: { $gte: since }, status: 'success' } },
+        {
+          $group: {
+            _id: { model: '$modelVersion', label: '$output.label' },
+            count: { $sum: 1 }
+          }
+        }
+      ]),
     ]);
 
     const errorMap = {};
@@ -141,6 +165,19 @@ const getAnalytics = async (req, res, next) => {
       });
     }
 
+    // Map model sentiment distributions
+    const modelSentimentMap = {
+      v1: { POSITIVE: 0, NEGATIVE: 0, NEUTRAL: 0 },
+      v2: { POSITIVE: 0, NEGATIVE: 0, NEUTRAL: 0 }
+    };
+    modelSentimentStats.forEach((s) => {
+      const model = s._id.model;
+      const label = s._id.label;
+      if (modelSentimentMap[model] && label) {
+        modelSentimentMap[model][label] = s.count;
+      }
+    });
+
     return sendSuccess(res, {
       period: { hours, since },
       summary: {
@@ -151,11 +188,20 @@ const getAnalytics = async (req, res, next) => {
         errorCount: errorMap.error || 0,
         timeoutCount: errorMap.timeout || 0,
       },
-      byModel: modelStats.map((m) => ({
-        version: m._id,
-        predictions: m.count,
-        avgLatencyMs: Math.round(m.avgLatency),
-      })),
+      byModel: modelStats.map((m) => {
+        const total = m.count || 0;
+        const errorCount = m.errorCount || 0;
+        const errorRate = total > 0 ? parseFloat(((errorCount / total) * 100).toFixed(2)) : 0;
+        
+        return {
+          version: m._id,
+          predictions: total,
+          avgLatencyMs: Math.round(m.avgLatency) || 0,
+          errorRate: errorRate,
+          avgConfidence: m.avgConfidence ? parseFloat(m.avgConfidence.toFixed(4)) : 0,
+          sentiment: modelSentimentMap[m._id] || { POSITIVE: 0, NEGATIVE: 0, NEUTRAL: 0 }
+        };
+      }),
       sentimentDistribution: sentimentStats.map((s) => ({
         sentiment: s._id || 'UNKNOWN',
         count: s.count,

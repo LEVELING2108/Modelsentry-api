@@ -609,6 +609,89 @@ function renderAdminAnalytics(data) {
       }
     }
   });
+
+  // 4. Stable vs Canary Side-by-Side Audit Table
+  const abTbody = document.getElementById('ab-comparison-tbody');
+  if (abTbody) {
+    if (!data.byModel || data.byModel.length === 0) {
+      abTbody.innerHTML = '<tr><td colspan="6" class="table-empty">No A/B telemetry logged yet.</td></tr>';
+    } else {
+      abTbody.innerHTML = data.byModel.map(m => {
+        const verUpper = m.version.toUpperCase();
+        
+        // 1. Latency progress bar
+        const maxLatencyMs = 200;
+        const latencyPct = Math.min(100, Math.round((m.avgLatencyMs / maxLatencyMs) * 100));
+        const latencyBarHtml = `
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-family:var(--f-mono); font-size:12px; width:45px; text-align:right;">${m.avgLatencyMs}ms</span>
+            <div class="track" style="width:70px; height:6px; background:rgba(255,255,255,0.08); border-radius:3px;">
+              <div class="bar" style="width:${latencyPct}%; height:100%; background:var(--lime); border-radius:3px;"></div>
+            </div>
+          </div>`;
+
+        // 2. Error rate progress bar
+        const errorPct = Math.min(100, Math.round(m.errorRate));
+        const errorBarHtml = `
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-family:var(--f-mono); font-size:12px; width:45px; text-align:right;">${m.errorRate}%</span>
+            <div class="track" style="width:70px; height:6px; background:rgba(255,255,255,0.08); border-radius:3px;">
+              <div class="bar" style="width:${errorPct}%; height:100%; background:#EF4444; border-radius:3px;"></div>
+            </div>
+          </div>`;
+
+        // 3. Confidence progress bar
+        const confVal = (m.avgConfidence * 100).toFixed(1);
+        const confPct = Math.round(m.avgConfidence * 100);
+        const confBarHtml = `
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-family:var(--f-mono); font-size:12px; width:45px; text-align:right;">${confVal}%</span>
+            <div class="track" style="width:70px; height:6px; background:rgba(255,255,255,0.08); border-radius:3px;">
+              <div class="bar" style="width:${confPct}%; height:100%; background:#3DEB8A; border-radius:3px;"></div>
+            </div>
+          </div>`;
+
+        // 4. Sentiment segment bar
+        const pos = m.sentiment?.POSITIVE || 0;
+        const neg = m.sentiment?.NEGATIVE || 0;
+        const neut = m.sentiment?.NEUTRAL || 0;
+        const totalSent = pos + neg + neut;
+
+        let sentBarHtml = '';
+        if (totalSent === 0) {
+          sentBarHtml = `<span style="font-size:11px; color:var(--t-low);">No sentiment inputs</span>`;
+        } else {
+          const posPct = ((pos / totalSent) * 100).toFixed(1);
+          const negPct = ((neg / totalSent) * 100).toFixed(1);
+          const neutPct = ((neut / totalSent) * 100).toFixed(1);
+
+          sentBarHtml = `
+            <div style="display:flex; flex-direction:column; gap:4px; width:100%;">
+              <div class="track" style="width:100%; height:10px; background:rgba(255,255,255,0.05); border-radius:4px; display:flex; overflow:hidden;">
+                <div style="width:${posPct}%; background:#3DEB8A; height:100%;" title="Positive: ${pos}"></div>
+                <div style="width:${negPct}%; background:#EF4444; height:100%;" title="Negative: ${neg}"></div>
+                <div style="width:${neutPct}%; background:#6B7280; height:100%;" title="Neutral: ${neut}"></div>
+              </div>
+              <div style="display:flex; justify-content:space-between; font-size:9px; font-family:var(--f-mono); color:var(--t-low);">
+                <span>Pos: ${posPct}%</span>
+                <span>Neg: ${negPct}%</span>
+                <span>Neut: ${neutPct}%</span>
+              </div>
+            </div>`;
+        }
+
+        return `
+          <tr>
+            <td><span class="badge ${m.version === 'v1' ? 'badge-lime' : 'badge-mono'}" style="font-weight:600;">${verUpper}</span></td>
+            <td style="font-family:var(--f-mono); font-size:13px;">${m.predictions}</td>
+            <td>${latencyBarHtml}</td>
+            <td>${errorBarHtml}</td>
+            <td>${confBarHtml}</td>
+            <td style="min-width: 180px;">${sentBarHtml}</td>
+          </tr>`;
+      }).join('');
+    }
+  }
 }
 
 // ═══════════════════════════════════════════════
