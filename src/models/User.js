@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 
 const userSchema = new mongoose.Schema(
   {
@@ -83,7 +84,7 @@ userSchema.methods.comparePassword = async function (candidatePassword) {
 // Generate a new API key — returns the plain key (store it, it won't be retrievable again)
 userSchema.methods.generateApiKey = async function () {
   const rawKey = `sk-${uuidv4().replace(/-/g, '')}`;
-  this.apiKeyHash = await bcrypt.hash(rawKey, 10);
+  this.apiKeyHash = crypto.createHash('sha256').update(rawKey).digest('hex');
   this.apiKeyPrefix = rawKey.substring(0, 8); // "sk-ab12cd"
   await this.save();
   return rawKey;
@@ -92,7 +93,12 @@ userSchema.methods.generateApiKey = async function () {
 // Verify an API key against this user's stored hash
 userSchema.methods.verifyApiKey = async function (candidateKey) {
   if (!this.apiKeyHash) return false;
-  return bcrypt.compare(candidateKey, this.apiKeyHash);
+  // Fallback for older bcrypt hashed keys
+  if (this.apiKeyHash.startsWith('$2a$') || this.apiKeyHash.startsWith('$2b$')) {
+    return bcrypt.compare(candidateKey, this.apiKeyHash);
+  }
+  const hash = crypto.createHash('sha256').update(candidateKey).digest('hex');
+  return hash === this.apiKeyHash;
 };
 
 // Strip sensitive fields from JSON output

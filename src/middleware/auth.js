@@ -4,6 +4,7 @@ const config = require('../config');
 const { sendError } = require('../utils/response');
 const logger = require('../utils/logger');
 const { metrics } = require('../utils/metrics');
+const crypto = require('crypto');
 
 /**
  * Authenticate via JWT bearer token OR API key.
@@ -36,23 +37,53 @@ const authenticate = async (req, res, next) => {
       req.authType = 'jwt';
     } else if (apiKey) {
       // --- API key path ---
-      // Find user by prefix for efficient lookup before expensive bcrypt compare
-      const prefix = apiKey.substring(0, 8);
-      user = await User.findOne({ apiKeyPrefix: prefix, isActive: true }).select(
-        '+apiKeyHash +isActive'
-      );
+      const redisCache = require('../config/redis');
+      const apiKeyHash = crypto.createHash('sha256').update(apiKey).digest('hex');
+      const cacheKey = `apikey:${apiKeyHash}`;
+
+      if (redisCache.client && redisCache.client.status === 'ready') {
+        try {
+          const cachedData = await redisCache.client.get(cacheKey);
+          if (cachedData) {
+            const userData = JSON.parse(cachedData);
+            user = User.hydrate(userData);
+            req.authType = 'api_key';
+          }
+        } catch (err) {
+          logger.warn('Failed to read API key from Redis', { error: err.message });
+        }
+      }
 
       if (!user) {
-        metrics.authFailuresTotal.inc({ reason: 'api_key_not_found' });
-        return sendError(res, 'Invalid API key', 401);
-      }
+        // Find user by prefix for efficient lookup before comparing
+        const prefix = apiKey.substring(0, 8);
+        user = await User.findOne({ apiKeyPrefix: prefix, isActive: true }).select(
+          '+apiKeyHash +isActive'
+        );
 
-      const isValid = await user.verifyApiKey(apiKey);
-      if (!isValid) {
-        metrics.authFailuresTotal.inc({ reason: 'api_key_invalid' });
-        return sendError(res, 'Invalid API key', 401);
+        if (!user) {
+          metrics.authFailuresTotal.inc({ reason: 'api_key_not_found' });
+          return sendError(res, 'Invalid API key', 401);
+        }
+
+        const isValid = await user.verifyApiKey(apiKey);
+        if (!isValid) {
+          metrics.authFailuresTotal.inc({ reason: 'api_key_invalid' });
+          return sendError(res, 'Invalid API key', 401);
+        }
+
+        req.authType = 'api_key';
+
+        // Cache user in Redis for 5 minutes (300 seconds)
+        if (redisCache.client && redisCache.client.status === 'ready') {
+          try {
+            const plainUser = user.toObject();
+            await redisCache.client.set(cacheKey, JSON.stringify(plainUser), 'EX', 300);
+          } catch (err) {
+            logger.warn('Failed to write API key to Redis cache', { error: err.message });
+          }
+        }
       }
-      req.authType = 'api_key';
     } else {
       return sendError(res, 'Authentication required. Provide Bearer token or X-API-Key header', 401);
     }
