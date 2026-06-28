@@ -133,6 +133,197 @@ const queryHuggingFace = async (text, modelId) => {
 };
 
 /**
+ * Safe JSON clean helper to parse LLM outputs.
+ */
+const parseFallbackResponse = (responseText, task, options = {}) => {
+  const cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+
+  if (task === 'sentiment') {
+    try {
+      const parsed = JSON.parse(cleanText);
+      const payload = {
+        label: parsed.label,
+        confidence: parseFloat(parsed.confidence) || 1.0,
+      };
+      if (options.returnScores && parsed.scores) {
+        payload.scores = parsed.scores;
+      }
+      return payload;
+    } catch (err) {
+      // Fallback parse if LLM returns text instead of valid JSON
+      logger.warn('Failed to parse sentiment JSON from fallback provider, attempting text matching', { responseText });
+      const lowerText = cleanText.toLowerCase();
+      let label = 'NEUTRAL';
+      if (lowerText.includes('positive')) label = 'POSITIVE';
+      else if (lowerText.includes('negative')) label = 'NEGATIVE';
+      
+      const payload = { label, confidence: 1.0 };
+      if (options.returnScores) {
+        payload.scores = {
+          POSITIVE: label === 'POSITIVE' ? 1.0 : 0.0,
+          NEGATIVE: label === 'NEGATIVE' ? 1.0 : 0.0,
+          NEUTRAL: label === 'NEUTRAL' ? 1.0 : 0.0,
+        };
+      }
+      return payload;
+    }
+  }
+
+  if (task === 'summarization') {
+    return {
+      summaryText: cleanText
+    };
+  }
+
+  if (task === 'ner') {
+    try {
+      const parsed = JSON.parse(cleanText);
+      if (Array.isArray(parsed)) {
+        return {
+          entities: parsed.map(item => ({
+            entity: item.entity || 'MISC',
+            word: item.word || '',
+            score: parseFloat(item.score) || 1.0
+          }))
+        };
+      }
+      return { entities: [] };
+    } catch (err) {
+      logger.warn('Failed to parse NER JSON from fallback provider', { responseText });
+      return { entities: [] };
+    }
+  }
+
+  throw new Error(`Unsupported task in parseFallbackResponse: ${task}`);
+};
+
+/**
+ * Direct call to upstream fallback providers (OpenAI, Gemini, or self-hosted API)
+ */
+const queryFallbackProvider = async (text, task, modelVersion, options) => {
+  const provider = (config.fallback?.provider || '').toLowerCase();
+  
+  if (provider === 'openai') {
+    if (!config.fallback.openai.apiKey) {
+      throw new Error('OpenAI API key is missing');
+    }
+    
+    let systemPrompt = '';
+    if (task === 'sentiment') {
+      systemPrompt = "You are a sentiment analysis classifier. Classify the user text into one of the following labels: POSITIVE, NEGATIVE, or NEUTRAL. Return ONLY a valid JSON object matching this schema: {\"label\": \"POSITIVE\" | \"NEGATIVE\" | \"NEUTRAL\", \"confidence\": float (0.0 to 1.0), \"scores\": {\"POSITIVE\": float, \"NEGATIVE\": float, \"NEUTRAL\": float}}. Make sure the scores sum to 1.0. Do not write any markdown code block backticks (e.g. ```json) or any extra explanation.";
+    } else if (task === 'summarization') {
+      systemPrompt = "You are a text summarizer. Summarize the user text. Return only the summary text without any prefix, markdown, formatting, or extra details.";
+    } else if (task === 'ner') {
+      systemPrompt = "You are a Named Entity Recognition (NER) classifier. Identify entities of type PER (person), LOC (location), and ORG (organization) in the user text. Return ONLY a JSON array of objects. Each object must have keys: 'entity' (must be PER, LOC, or ORG), 'word' (the matched text), and 'score' (a float confidence score between 0.8 and 1.0). Do not write any markdown code block backticks (e.g. ```json) or any extra explanation. Return an empty array [] if no entities are found.";
+    }
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.fallback.openai.apiKey}`
+      },
+      body: JSON.stringify({
+        model: config.fallback.openai.model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: text }
+        ],
+        temperature: 0
+      })
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`OpenAI API error: ${response.status} - ${errText}`);
+    }
+
+    const resJson = await response.json();
+    const responseText = resJson.choices?.[0]?.message?.content;
+    if (!responseText) {
+      throw new Error('Empty response from OpenAI');
+    }
+
+    return parseFallbackResponse(responseText, task, options);
+  }
+
+  if (provider === 'gemini') {
+    if (!config.fallback.gemini.apiKey) {
+      throw new Error('Gemini API key is missing');
+    }
+
+    let systemPrompt = '';
+    if (task === 'sentiment') {
+      systemPrompt = "You are a sentiment analysis classifier. Classify the user text into one of the following labels: POSITIVE, NEGATIVE, or NEUTRAL. Return ONLY a valid JSON object matching this schema: {\"label\": \"POSITIVE\" | \"NEGATIVE\" | \"NEUTRAL\", \"confidence\": float (0.0 to 1.0), \"scores\": {\"POSITIVE\": float, \"NEGATIVE\": float, \"NEUTRAL\": float}}. Make sure the scores sum to 1.0. Do not write any markdown code block backticks (e.g. ```json) or any extra explanation.";
+    } else if (task === 'summarization') {
+      systemPrompt = "You are a text summarizer. Summarize the user text. Return only the summary text without any prefix, markdown, formatting, or extra details.";
+    } else if (task === 'ner') {
+      systemPrompt = "You are a Named Entity Recognition (NER) classifier. Identify entities of type PER (person), LOC (location), and ORG (organization) in the user text. Return ONLY a JSON array of objects. Each object must have keys: 'entity' (must be PER, LOC, or ORG), 'word' (the matched text), and 'score' (a float confidence score between 0.8 and 1.0). Do not write any markdown code block backticks (e.g. ```json) or any extra explanation. Return an empty array [] if no entities are found.";
+    }
+
+    const modelName = config.fallback.gemini.model;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${config.fallback.gemini.apiKey}`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: `${systemPrompt}\n\nUser Text:\n${text}` }]
+          }
+        ],
+        generationConfig: {
+          temperature: 0
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Gemini API error: ${response.status} - ${errText}`);
+    }
+
+    const resJson = await response.json();
+    const responseText = resJson.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!responseText) {
+      throw new Error('Empty response from Gemini');
+    }
+
+    return parseFallbackResponse(responseText, task, options);
+  }
+
+  if (provider === 'self-hosted') {
+    if (!config.fallback.selfHosted.url) {
+      throw new Error('Self-hosted URL is missing');
+    }
+
+    const headers = { 'Content-Type': 'application/json' };
+    if (config.fallback.selfHosted.apiKey) {
+      headers['Authorization'] = `Bearer ${config.fallback.selfHosted.apiKey}`;
+    }
+
+    const response = await fetch(config.fallback.selfHosted.url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ text, task, modelVersion })
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Self-hosted API error: ${response.status} - ${errText}`);
+    }
+
+    return await response.json();
+  }
+
+  throw new Error(`Unsupported fallback provider: ${provider}`);
+};
+
+/**
  * Core inference function with timeout, metrics, and structured logging.
  */
 const runInference = async (text, requestedVersion, task = 'sentiment', options = {}) => {
@@ -184,6 +375,7 @@ const runInference = async (text, requestedVersion, task = 'sentiment', options 
   try {
     let rawResults;
     let usedRealModel = false;
+    let fallbackPayload = null;
     let modelId = '';
 
     if (task === 'sentiment') {
@@ -194,13 +386,31 @@ const runInference = async (text, requestedVersion, task = 'sentiment', options 
       modelId = modelVersion === 'v1' ? config.model.v1NerId : config.model.v2NerId;
     }
 
+    // Try Hugging Face first
     if (config.model.hfApiKey && modelId) {
       try {
         rawResults = await queryHuggingFace(text, modelId);
         usedRealModel = true;
       } catch (error) {
-        logger.warn('Hugging Face inference failed, falling back to simulation', {
+        logger.warn('Hugging Face inference failed, trying fallback provider', {
           error: error.message,
+          modelVersion,
+          task,
+        });
+      }
+    }
+
+    // Try Fallback Provider if Hugging Face was not tried or failed
+    if (!usedRealModel && config.fallback && config.fallback.provider) {
+      try {
+        fallbackPayload = await queryFallbackProvider(text, task, modelVersion, options);
+        if (fallbackPayload) {
+          usedRealModel = true;
+        }
+      } catch (error) {
+        logger.warn('Fallback provider inference failed, falling back to simulation', {
+          error: error.message,
+          fallbackProvider: config.fallback.provider,
           modelVersion,
           task,
         });
@@ -216,7 +426,9 @@ const runInference = async (text, requestedVersion, task = 'sentiment', options 
 
     let resultPayload = { modelVersion };
 
-    if (task === 'sentiment') {
+    if (fallbackPayload) {
+      Object.assign(resultPayload, fallbackPayload);
+    } else if (task === 'sentiment') {
       let scores;
       if (usedRealModel && Array.isArray(rawResults)) {
         scores = { POSITIVE: 0, NEGATIVE: 0, NEUTRAL: 0 };
