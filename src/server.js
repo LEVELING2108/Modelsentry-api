@@ -5,6 +5,7 @@ const logger = require('./utils/logger');
 const { metrics } = require('./utils/metrics');
 const ModelMetadata = require('./models/ModelMetadata');
 const { connectionTracker } = require('./middleware/metricsMiddleware');
+const { startDriftChecker, stopDriftChecker } = require('./utils/driftChecker');
 
 const start = async () => {
   // Connect to MongoDB
@@ -29,9 +30,15 @@ const start = async () => {
   metrics.modelABTrafficGauge.set({ model_version: 'v1' }, config.model.v1Weight);
   metrics.modelABTrafficGauge.set({ model_version: 'v2' }, config.model.v2Weight);
 
+  // Start Canary Auto-Rollback drift detector
+  startDriftChecker();
+
   // ── Graceful shutdown ───────────────────────────────────────────────────────
   const shutdown = async (signal) => {
     logger.info(`${signal} received — shutting down gracefully`);
+    
+    // Stop drift detector
+    stopDriftChecker();
 
     // Stop accepting new connections
     server.close(async () => {
