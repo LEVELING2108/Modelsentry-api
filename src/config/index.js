@@ -36,6 +36,22 @@ const config = {
     v2NerId: process.env.MODEL_NER_V2_ID || 'elastic/distilbert-base-uncased-finetuned-conll03-english',
   },
 
+  fallback: {
+    provider: process.env.FALLBACK_PROVIDER || '', // 'openai', 'gemini', 'self-hosted'
+    openai: {
+      apiKey: process.env.OPENAI_API_KEY || '',
+      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+    },
+    gemini: {
+      apiKey: process.env.GEMINI_API_KEY || '',
+      model: process.env.GEMINI_MODEL || 'gemini-1.5-flash',
+    },
+    selfHosted: {
+      url: process.env.SELF_HOSTED_URL || '',
+      apiKey: process.env.SELF_HOSTED_API_KEY || '',
+    },
+  },
+
   redis: {
     host: process.env.REDIS_HOST || 'localhost',
     port: parseInt(process.env.REDIS_PORT, 10) || 6379,
