@@ -45,7 +45,7 @@ const login = async ({ email, password }) => {
   return { token, user: user.toSafeObject() };
 };
 
-const generateApiKey = async (userId, scopes, rateLimit) => {
+const generateApiKey = async (userId, scopes, rateLimit, monthlyUsageBudget) => {
   const user = await User.findById(userId);
   if (!user) {
     const err = new Error('User not found');
@@ -59,11 +59,35 @@ const generateApiKey = async (userId, scopes, rateLimit) => {
   if (rateLimit) {
     user.apiKeyRateLimit = parseInt(rateLimit, 10) || 100;
   }
+  if (monthlyUsageBudget !== undefined) {
+    user.apiKeyMonthlyUsageBudget = parseInt(monthlyUsageBudget, 10) || 500000;
+  }
+
+  // Reset usage counters when generating/regenerating key properties
+  user.apiKeyCurrentMonthUsage = 0;
+  
+  // Reset usage reset date to 1st of next month
+  const nextMonth = new Date();
+  nextMonth.setMonth(nextMonth.getMonth() + 1);
+  nextMonth.setDate(1);
+  nextMonth.setHours(0, 0, 0, 0);
+  user.apiKeyUsageResetDate = nextMonth;
 
   const rawKey = await user.generateApiKey();
-  logger.info('API key generated', { userId, prefix: user.apiKeyPrefix, scopes: user.apiKeyScopes, rateLimit: user.apiKeyRateLimit });
+  logger.info('API key generated', {
+    userId,
+    prefix: user.apiKeyPrefix,
+    scopes: user.apiKeyScopes,
+    rateLimit: user.apiKeyRateLimit,
+    monthlyUsageBudget: user.apiKeyMonthlyUsageBudget
+  });
 
-  return { apiKey: rawKey, prefix: user.apiKeyPrefix };
+  return { 
+    apiKey: rawKey, 
+    prefix: user.apiKeyPrefix,
+    rateLimit: user.apiKeyRateLimit,
+    monthlyUsageBudget: user.apiKeyMonthlyUsageBudget
+  };
 };
 
 module.exports = { register, login, generateApiKey };
