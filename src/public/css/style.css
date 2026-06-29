@@ -55,11 +55,6 @@ body {
   font-size: 14px;
   min-height: 100vh;
   overflow-x: hidden;
-  /* Subtle grid texture */
-  background-image:
-    linear-gradient(rgba(255,255,255,0.012) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.012) 1px, transparent 1px);
-  background-size: 40px 40px;
 }
 
 /* ── Scrollbar ─────────────────────────────────── */
@@ -98,14 +93,9 @@ body {
   overflow: hidden;
 }
 
-/* corner accent */
-.auth-card::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0;
-  width: 100px; height: 100px;
-  background: radial-gradient(ellipse at top left, var(--lime-glow), transparent 70%);
-  pointer-events: none;
+/* flat corner border */
+.auth-card {
+  border-top: 3px solid var(--lime);
 }
 
 .auth-logo {
@@ -308,22 +298,7 @@ body {
   position: relative;
   overflow: hidden;
 }
-
-/* Pulse line animation */
-.sidebar::after {
-  content: '';
-  position: absolute;
-  right: 0; top: 0;
-  width: 1px; height: 100%;
-  background: linear-gradient(180deg, transparent 0%, var(--lime) 50%, transparent 100%);
-  animation: pulseDown 3s infinite ease-in-out;
-  opacity: 0.4;
-}
-
-@keyframes pulseDown {
-  0%   { transform: translateY(-100%); }
-  100% { transform: translateY(100%); }
-}
+/* Clean sidebar right border (flat, static) */
 
 .sidebar-brand {
   display: flex; align-items: center; gap: 10px;
