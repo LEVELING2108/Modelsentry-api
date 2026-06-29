@@ -3,6 +3,7 @@ const { runInference, runBatchInference } = require('../services/modelService');
 const Prediction = require('../models/Prediction');
 const { sendSuccess, sendError } = require('../utils/response');
 const logger = require('../utils/logger');
+const { consumeUsage } = require('../middleware/auth');
 
 const predict = async (req, res, next) => {
   const requestId = req.requestId || uuidv4();
@@ -58,6 +59,20 @@ const predict = async (req, res, next) => {
 
     // Increment user request count async
     req.user.constructor.findByIdAndUpdate(req.user._id, { $inc: { requestCount: 1 } }).catch(() => {});
+
+    // Consume character usage budget if using an API key
+    if (req.authType === 'api_key') {
+      let outputLen = 0;
+      if (task === 'sentiment') {
+        outputLen = 1;
+      } else if (task === 'summarization') {
+        outputLen = result.summaryText ? result.summaryText.length : 0;
+      } else if (task === 'ner') {
+        outputLen = result.entities ? JSON.stringify(result.entities).length : 0;
+      }
+      const totalUsage = text.length + outputLen;
+      consumeUsage(req.user._id, req.apiKeyHash, totalUsage).catch(() => {});
+    }
 
     return sendSuccess(res, {
       requestId,
@@ -132,6 +147,29 @@ const batchPredict = async (req, res, next) => {
       totalLatencyMs,
       task,
     });
+
+    // Consume character usage budget for batch if using API key
+    if (req.authType === 'api_key') {
+      let totalUsage = 0;
+      results.forEach((r, idx) => {
+        const inputLen = inputs[idx]?.text ? inputs[idx].text.length : 0;
+        let outputLen = 0;
+        if (!r.error) {
+          if (task === 'sentiment') {
+            outputLen = 1;
+          } else if (task === 'summarization') {
+            outputLen = r.summaryText ? r.summaryText.length : 0;
+          } else if (task === 'ner') {
+            outputLen = r.entities ? JSON.stringify(r.entities).length : 0;
+          }
+        }
+        totalUsage += inputLen + outputLen;
+      });
+
+      if (totalUsage > 0) {
+        consumeUsage(req.user._id, req.apiKeyHash, totalUsage).catch(() => {});
+      }
+    }
 
     return sendSuccess(res, {
       batchId,

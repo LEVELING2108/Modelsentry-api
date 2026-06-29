@@ -51,6 +51,24 @@ const userSchema = new mongoose.Schema(
       type: Number,
       default: 100,
     },
+    apiKeyMonthlyUsageBudget: {
+      type: Number,
+      default: 500000, // Default 500,000 characters
+    },
+    apiKeyCurrentMonthUsage: {
+      type: Number,
+      default: 0,
+    },
+    apiKeyUsageResetDate: {
+      type: Date,
+      default: () => {
+        const d = new Date();
+        d.setMonth(d.getMonth() + 1);
+        d.setDate(1);
+        d.setHours(0, 0, 0, 0);
+        return d;
+      },
+    },
     isActive: {
       type: Boolean,
       default: true,
@@ -99,6 +117,39 @@ userSchema.methods.verifyApiKey = async function (candidateKey) {
   }
   const hash = crypto.createHash('sha256').update(candidateKey).digest('hex');
   return hash === this.apiKeyHash;
+};
+
+// Check and reset the monthly usage budget if reset date has passed
+userSchema.methods.checkAndResetUsageBudget = async function (apiKeyHash) {
+  const now = new Date();
+  if (this.apiKeyUsageResetDate && now >= this.apiKeyUsageResetDate) {
+    this.apiKeyCurrentMonthUsage = 0;
+    
+    // Set reset date to 1st of next month
+    const nextMonth = new Date();
+    nextMonth.setMonth(nextMonth.getMonth() + 1);
+    nextMonth.setDate(1);
+    nextMonth.setHours(0, 0, 0, 0);
+    this.apiKeyUsageResetDate = nextMonth;
+    
+    await this.save();
+
+    // Sync to Redis cache if apiKeyHash is provided
+    if (apiKeyHash) {
+      const redisCache = require('../config/redis');
+      if (redisCache.client && redisCache.client.status === 'ready') {
+        const cacheKey = `apikey:${apiKeyHash}`;
+        try {
+          const plainUser = this.toObject();
+          await redisCache.client.set(cacheKey, JSON.stringify(plainUser), 'EX', 300);
+        } catch (err) {
+          // ignore cache write error
+        }
+      }
+    }
+    return true;
+  }
+  return false;
 };
 
 // Strip sensitive fields from JSON output

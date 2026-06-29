@@ -84,6 +84,19 @@ const authenticate = async (req, res, next) => {
           }
         }
       }
+
+      req.apiKeyHash = apiKeyHash;
+
+      // Check monthly budget limit
+      await user.checkAndResetUsageBudget(apiKeyHash);
+      if (user.apiKeyCurrentMonthUsage >= user.apiKeyMonthlyUsageBudget) {
+        metrics.authFailuresTotal.inc({ reason: 'usage_budget_exceeded' });
+        return sendError(
+          res,
+          `Monthly API Key usage budget exceeded. Limit: ${user.apiKeyMonthlyUsageBudget} characters.`,
+          403
+        );
+      }
     } else {
       return sendError(res, 'Authentication required. Provide Bearer token or X-API-Key header', 401);
     }
@@ -200,4 +213,36 @@ const requireScope = (scope) => {
   };
 };
 
-module.exports = { authenticate, authorize, apiKeyRateLimiter, requireScope };
+/**
+ * Increment user's monthly character usage in database and Redis cache.
+ */
+const consumeUsage = async (userId, apiKeyHash, amount) => {
+  try {
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { $inc: { apiKeyCurrentMonthUsage: amount } },
+      { new: true }
+    );
+
+    if (user && apiKeyHash) {
+      const redisCache = require('../config/redis');
+      if (redisCache.client && redisCache.client.status === 'ready') {
+        const cacheKey = `apikey:${apiKeyHash}`;
+        try {
+          const cachedData = await redisCache.client.get(cacheKey);
+          if (cachedData) {
+            const userData = JSON.parse(cachedData);
+            userData.apiKeyCurrentMonthUsage = (userData.apiKeyCurrentMonthUsage || 0) + amount;
+            await redisCache.client.set(cacheKey, JSON.stringify(userData), 'EX', 300);
+          }
+        } catch (err) {
+          logger.warn('Failed to update cached API key usage in Redis', { error: err.message });
+        }
+      }
+    }
+  } catch (error) {
+    logger.error('Failed to consume usage budget', { userId, amount, error: error.message });
+  }
+};
+
+module.exports = { authenticate, authorize, apiKeyRateLimiter, requireScope, consumeUsage };
